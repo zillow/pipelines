@@ -14,6 +14,7 @@
 
 __all__ = [
     'create_component_from_func',
+    'spark',
     'func_to_container_op',
     'func_to_component_text',
     'default_base_image_or_builder',
@@ -726,6 +727,70 @@ def func_to_component_file(func, output_component_file, base_image: str = None, 
     
     Path(output_component_file).write_text(component_yaml)
 
+# Steps to take
+# 1) Use `extra_code` to get no arg passing case working [DONE]
+# 2) Basic arg passing 
+# 3) Configuration management
+# 4) Pickling [PARTIAL]
+# 5) Add testing code
+def spark(spark_app_func):
+
+    import inspect
+    from inspect import signature
+    import functools
+    from functools import wraps
+    
+    pyspark_import_code = "from pyspark.sql import SparkSession\nimport argparse\n" # imported here because SparkSession is needed by the application code
+    spark_app_func_lines = inspect.getsource(spark_app_func).replace("@spark", "")
+    spark_app_func_arg_names = inspect.getfullargspec(spark_app_func).args # list of argument names
+
+    main_calling_code = (
+        "\nif __name__ == \"__main__\":\n"
+        "\tparser = argparse.ArgumentParser()\n"
+    )
+    func_entrypoint_code = f"\t{spark_app_func.__name__}("
+
+    for arg in spark_app_func_arg_names:
+        main_calling_code += f"\tparser.add_argument(\"--{arg}\")\n"
+        func_entrypoint_code += f"args.{arg},"
+    main_calling_code += "\targs = parser.parse_args()\n"
+    func_entrypoint_code += ")"
+        
+    full_application_code = pyspark_import_code + spark_app_func_lines + main_calling_code + func_entrypoint_code
+
+    # extra_code using the write the application code to `spark_application_file.py` (to be used by spark-submit)
+    extra_code = f"import subprocess\nimport json\n" \
+                 f"spark_application_file = open(\"/home/zservice/spark_application_file.py\", \"w\")\narg_names_file = open(\"/home/zservice/arg_names_file.json\", \"w\")\n" \
+                 f"spark_application_file.write(\"\"\"{full_application_code}\"\"\")\n" \
+                 f"json.dump(json.dumps({spark_app_func_arg_names}), arg_names_file)\n" \
+                 f"spark_application_file.close(), arg_names_file.close()\n"
+
+    def spark_executable_func():
+        import subprocess
+        import json
+
+        with open("/home/zservice/arg_names_file.json", "r") as arg_names_file:
+            arg_names = json.loads(json.load(arg_names_file))
+
+        spark_submit_cmd = ["spark-submit", "--master", "local", 
+                            "--deploy-mode", "client", 
+                            "--conf", "spark.eventLog.enabled=false", 
+                            "/home/zservice/spark_application_file.py"]
+
+        # for arg, arg_name in zip(args, arg_names):
+        #     spark_submit_cmd.extend([f"--{arg_name}", f"{arg}"])
+
+        completed_process = subprocess.run(spark_submit_cmd)
+        completed_process.check_returncode()
+        return
+    
+    return func_to_container_op(
+        spark_executable_func, 
+        extra_code=extra_code, 
+        use_code_pickling=True,
+        base_image="analytics-docker.artifactory.zgtools.net/artificial-intelligence/ai-platform/aip-py36-cpu-spark-jupyter:2.3.8254d0ef.spark-2-4" # Spark v.2.4.6
+    )
+
 
 def func_to_container_op(func, output_component_file=None, base_image: str = None, extra_code='', packages_to_install: List[str] = None, modules_to_capture: List[str] = None, use_code_pickling=False):
     '''Converts a Python function to a component and returns a task (:class:`kfp.dsl.ContainerOp`) factory.
@@ -761,6 +826,10 @@ def func_to_container_op(func, output_component_file=None, base_image: str = Non
         modules_to_capture=modules_to_capture,
         use_code_pickling=use_code_pickling,
     )
+
+    # print(func)
+    # print("\n\n\n")
+    # print(component_spec)
 
     output_component_file = output_component_file or getattr(func, '_component_target_component_file', None)
     if output_component_file:
