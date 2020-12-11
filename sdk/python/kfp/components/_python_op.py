@@ -765,7 +765,7 @@ def spark(spark_app_func):
                  f"json.dump(json.dumps({spark_app_func_arg_names}), arg_names_file)\n" \
                  f"spark_application_file.close(), arg_names_file.close()\n"
 
-    def spark_executable_func():
+    def spark_executable_func(**kwargs):
         import subprocess
         import json
 
@@ -777,19 +777,32 @@ def spark(spark_app_func):
                             "--conf", "spark.eventLog.enabled=false", 
                             "/home/zservice/spark_application_file.py"]
 
-        # for arg, arg_name in zip(args, arg_names):
-        #     spark_submit_cmd.extend([f"--{arg_name}", f"{arg}"])
+        for arg_name in arg_names:
+            spark_submit_cmd.extend([f"--{arg_name}", f"{kwargs[arg_name]}"])
 
         completed_process = subprocess.run(spark_submit_cmd)
         completed_process.check_returncode()
         return
-    
-    return func_to_container_op(
-        spark_executable_func, 
-        extra_code=extra_code, 
-        use_code_pickling=True,
+
+    # Hook up spark executable func to the inputs and outputs of the spark_app_func.
+    spark_app_func_signature = inspect.signature(spark_app_func)
+    import types
+    wrapped_spark_executable_func = types.FunctionType(spark_executable_func.__code__, {})  # , {'dict_func': func, 'locals': locals}, name=func_name, argdefs=default_arg_values)
+    wrapped_spark_executable_func.__signature__ = spark_app_func_signature
+
+    import pdb; pdb.set_trace()
+
+    container_op = func_to_container_op(
+        wrapped_spark_executable_func,
+        extra_code=extra_code,
+        # use_code_pickling=True,
         base_image="analytics-docker.artifactory.zgtools.net/artificial-intelligence/ai-platform/aip-py36-cpu-spark-jupyter:2.3.8254d0ef.spark-2-4" # Spark v.2.4.6
     )
+    component_spec = container_op.component_spec
+    command = component_spec.implementation.container.command
+    print(command[3])
+    import pdb; pdb.set_trace()
+    return container_op
 
 
 def func_to_container_op(func, output_component_file=None, base_image: str = None, extra_code='', packages_to_install: List[str] = None, modules_to_capture: List[str] = None, use_code_pickling=False):
