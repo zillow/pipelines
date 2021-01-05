@@ -35,10 +35,15 @@ from .output import OutputFormat
 @click.option('--userid', help='Client ID for IAP protected endpoint to obtain the refresh token.')
 @click.pass_context
 def cli(ctx, endpoint, iap_client_id, namespace, api_namespace, other_client_id, other_client_secret, output, userid):
-    """kfp is the command line interface to KFP service."""
+    """kfp is the command line interface to KFP service.
+
+    Feature stage:
+    [Alpha](https://github.com/kubeflow/pipelines/blob/07328e5094ac2981d3059314cc848fbb71437a76/docs/release/feature-stages.md#alpha)
+
+    """
     if ctx.invoked_subcommand == 'diagnose_me':
-          # Do not create a client for diagnose_me
-          return
+        # Do not create a client for diagnose_me
+        return
     ctx.obj['client'] = Client(
         host=endpoint,
         client_id=iap_client_id,
@@ -47,7 +52,7 @@ def cli(ctx, endpoint, iap_client_id, namespace, api_namespace, other_client_id,
         other_client_secret=other_client_secret,
         userid=userid
     )
-    ctx.obj['namespace']= namespace
+    ctx.obj['namespace'] = namespace
     ctx.obj['output'] = output
 
 def main():

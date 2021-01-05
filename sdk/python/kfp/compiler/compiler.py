@@ -13,11 +13,12 @@
 # limitations under the License.
 import datetime
 import json
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from deprecated import deprecated
 import inspect
 import tarfile
 import uuid
+import warnings
 import zipfile
 from typing import Callable, Set, List, Text, Dict, Tuple, Any, Union, Optional
 
@@ -323,6 +324,21 @@ class Compiler(object):
 
     _get_inputs_outputs_recursive_opsgroup(root_group)
 
+    # Generate the input for SubGraph along with parallelfor
+    for sub_graph in opsgroup_groups:
+      if sub_graph in op_name_to_for_loop_op:
+        # The opsgroup list is sorted with the farthest group as the first and the opsgroup
+        # itself as the last. To get the latest opsgroup which is not the opsgroup itself -2 is used. 
+        parent = opsgroup_groups[sub_graph][-2] 
+        if parent and parent.startswith('subgraph'):
+          # propagate only op's pipeline param from subgraph to parallelfor
+          loop_op = op_name_to_for_loop_op[sub_graph]
+          pipeline_param = loop_op.loop_args.items_or_pipeline_param
+          if loop_op.items_is_pipeline_param and pipeline_param.op_name:
+            param_name = '%s-%s' % (
+              sanitize_k8s_name(pipeline_param.op_name), pipeline_param.name)
+            inputs[parent].add((param_name, pipeline_param.op_name))
+
     return inputs, outputs
 
   def _get_dependencies(self, pipeline, root_group, op_groups, opsgroups_groups, opsgroups, condition_params):
@@ -437,7 +453,8 @@ class Compiler(object):
 
     # Generate tasks section.
     tasks = []
-    for sub_group in group.groups + group.ops:
+    sub_groups = group.groups + group.ops
+    for sub_group in sub_groups:
       is_recursive_subgroup = (isinstance(sub_group, OpsGroup) and sub_group.recursive_ref)
       # Special handling for recursive subgroup: use the existing opsgroup name
       if is_recursive_subgroup:
@@ -483,7 +500,11 @@ class Compiler(object):
           else:
             param_name = '%s-%s' % (
               sanitize_k8s_name(pipeline_param.op_name), pipeline_param.name)
-            withparam_value = '{{tasks.%s.outputs.parameters.%s}}' % (
+            # [TODO] create ENUM or string type to represent all well-known group types in the DSL. 
+            if group.type == 'subgraph':
+              withparam_value = '{{inputs.parameters.%s}}' % (param_name)
+            else:
+              withparam_value = '{{tasks.%s.outputs.parameters.%s}}' % (
                 sanitize_k8s_name(pipeline_param.op_name),
                 param_name)
 
@@ -491,7 +512,7 @@ class Compiler(object):
             if 'dependencies' not in task or task['dependencies'] is None:
               task['dependencies'] = []
             if sanitize_k8s_name(
-                pipeline_param.op_name) not in task['dependencies']:
+                pipeline_param.op_name) not in task['dependencies'] and group.type != 'subgraph':
               task['dependencies'].append(
                   sanitize_k8s_name(pipeline_param.op_name))
 
@@ -621,18 +642,15 @@ class Compiler(object):
 
     return templates
 
-  def _create_pipeline_workflow(self, args, pipeline, op_transformers=None, pipeline_conf=None):
+  def _create_pipeline_workflow(self, parameter_defaults, pipeline, op_transformers=None, pipeline_conf=None):
     """Create workflow for the pipeline."""
 
     # Input Parameters
     input_params = []
-    for arg in args:
-      param = {'name': arg.name}
-      if arg.value is not None:
-        if isinstance(arg.value, (list, tuple)):
-          param['value'] = json.dumps(arg.value, sort_keys=True)
-        else:
-          param['value'] = str(arg.value)
+    for name, value in parameter_defaults.items():
+      param = {'name': name}
+      if value is not None:
+        param['value'] = value
       input_params.append(param)
 
     # Making the pipeline group name unique to prevent name clashes with templates
@@ -703,6 +721,9 @@ class Compiler(object):
     # nodeselection, specified in the template.
     if pipeline_conf.default_pod_node_selector:
       workflow['spec']['nodeSelector'] = pipeline_conf.default_pod_node_selector
+
+    if pipeline_conf.dns_config:
+      workflow['spec']['dnsConfig'] = convert_k8s_obj_to_json(pipeline_conf.dns_config)
 
     if pipeline_conf.image_pull_policy != None:
       if pipeline_conf.image_pull_policy in ["Always", "Never", "IfNotPresent"]:
@@ -792,7 +813,7 @@ class Compiler(object):
 
     # Need to first clear the default value of dsl.PipelineParams. Otherwise, it
     # will be resolved immediately in place when being to each component.
-    default_param_values = {}
+    default_param_values = OrderedDict()
     for param in params_list:
       default_param_values[param.name] = param.value
       param.value = None
@@ -820,23 +841,23 @@ class Compiler(object):
     self._sanitize_and_inject_artifact(dsl_pipeline, pipeline_conf)
 
     # Fill in the default values.
-    args_list_with_defaults = []
+    args_list_with_defaults = OrderedDict()
     if pipeline_meta.inputs:
-      args_list_with_defaults = [
-        dsl.PipelineParam(sanitize_k8s_name(input_spec.name, True), value=input_spec.default)
+      args_list_with_defaults = OrderedDict([
+        (sanitize_k8s_name(input_spec.name, True), input_spec.default)
         for input_spec in pipeline_meta.inputs
-      ]
+      ])
     elif params_list:
       # Or, if args are provided by params_list, fill in pipeline_meta.
-      for param in params_list:
-        param.value = default_param_values[param.name]
-
-      args_list_with_defaults = params_list
+      args_list_with_defaults = default_param_values
       pipeline_meta.inputs = [
         InputSpec(
             name=param.name,
             type=param.param_type,
-            default=param.value) for param in params_list]
+            default=default_param_values[param.name]
+        )
+        for param in params_list
+      ]
 
     op_transformers = [add_pod_env]
     op_transformers.extend(pipeline_conf.op_transformers)
@@ -908,9 +929,12 @@ class Compiler(object):
 
     Args:
       pipeline_func: Pipeline functions with @dsl.pipeline decorator.
-      package_path: The output workflow tar.gz file path. for example, "~/a.tar.gz"
+      package_path: The output workflow tar.gz file path. for example,
+        "~/a.tar.gz"
       type_check: Whether to enable the type check or not, default: False.
-      pipeline_conf: PipelineConf instance. Can specify op transforms, image pull secrets and other pipeline-level configuration options. Overrides any configuration that may be set by the pipeline.
+      pipeline_conf: PipelineConf instance. Can specify op transforms, image
+        pull secrets and other pipeline-level configuration options. Overrides
+        any configuration that may be set by the pipeline.
     """
     import kfp
     type_check_old_value = kfp.TYPE_CHECK
