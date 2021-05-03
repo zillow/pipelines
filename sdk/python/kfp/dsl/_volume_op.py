@@ -17,7 +17,7 @@ import re
 from typing import List, Dict
 from kubernetes.client.models import (
     V1ObjectMeta, V1ResourceRequirements, V1PersistentVolumeClaimSpec,
-    V1PersistentVolumeClaim, V1TypedLocalObjectReference
+    V1PersistentVolumeClaim, V1TypedLocalObjectReference, V1OwnerReference
 )
 
 from ._resource_op import ResourceOp
@@ -102,12 +102,23 @@ class VolumeOp(ResourceOp):
                 name=data_source
             )
 
+        # Set owner references
+        owner_reference = V1OwnerReference(
+            api_version="argoproj.io/v1alpha1",
+            controller=True,
+            kind="Workflow",
+            name="{{workflow.name}}",
+            uid="{{workflow.uid}}"
+        )
+        owner_references = [owner_reference]
+
         # Set the k8s_resource
         if not match_serialized_pipelineparam(str(resource_name)):
             resource_name = sanitize_k8s_name(resource_name)
         pvc_metadata = V1ObjectMeta(
             name="{{workflow.name}}-%s" % resource_name,
-            annotations=annotations
+            annotations=annotations,
+            owner_references=owner_references
         )
         requested_resources = V1ResourceRequirements(
             requests={"storage": size}
