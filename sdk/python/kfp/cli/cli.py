@@ -44,8 +44,8 @@ def cli(ctx, endpoint, iap_client_id, namespace, other_client_id, other_client_s
         # Do not create a client for diagnose_me
         return
     ctx.obj['client'] = Client(
-        endpoint=endpoint,
-        iap_client_id=iap_client_id,
+        host=endpoint,
+        client_id=iap_client_id,
         namespace=namespace,
         other_client_id=other_client_id,
         other_client_secret=other_client_secret,
