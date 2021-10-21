@@ -295,8 +295,6 @@ class Client(object):
     return '/pipeline'
 
   def _load_context_setting_or_default(self):
-    logging.info(f'Client.LOCAL_KFP_CONTEXT: {Client.LOCAL_KFP_CONTEXT}')
-    logging.info(os.path.exists(Client.LOCAL_KFP_CONTEXT))
     if os.path.exists(Client.LOCAL_KFP_CONTEXT):
       with open(Client.LOCAL_KFP_CONTEXT, 'r') as f:
         self._context_setting = json.load(f)
