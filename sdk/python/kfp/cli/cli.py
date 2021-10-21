@@ -43,7 +43,14 @@ def cli(ctx, endpoint, iap_client_id, namespace, other_client_id, other_client_s
     if ctx.invoked_subcommand == 'diagnose_me':
         # Do not create a client for diagnose_me
         return
-    ctx.obj['client'] = Client(endpoint, iap_client_id, namespace, other_client_id, other_client_secret, userid)
+    ctx.obj['client'] = Client(
+        endpoint=endpoint,
+        iap_client_id=iap_client_id,
+        namespace=namespace,
+        other_client_id=other_client_id,
+        other_client_secret=other_client_secret,
+        userid=userid
+    )
     ctx.obj['namespace'] = namespace
     ctx.obj['output'] = output
 
