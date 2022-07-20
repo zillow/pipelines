@@ -1,14 +1,29 @@
 include:
-  - project: 'analytics/artificial-intelligence/ai-platform/aip-infrastructure/ci-templates/ci-cd-template'
-    ref: 'v2'
+  - project: &include_project 'analytics/artificial-intelligence/ai-platform/aip-infrastructure/ci-templates/ci-cd-template'
+    ref: &include_ref 'v3'
     file: '/blocks/python.yml'
+  - project: *include_project
+    ref: 'alexla/AIP-6392' # *include_ref
+    file: '/blocks/git.yml'
 
 stages:
+  - tag
   - build
 
 variables:
   MAJOR_VERSION: "1"
   MINOR_VERSION: "0"
+
+git:tag:
+  extends: .git_tag
+  # TODO AIP-6392 Remove debugging rules.
+  rules:
+    # Never try to rebuild the images from the tag build.
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - when: always
 
 build:publish-sdk:
   extends: .aip_python_debian_image
