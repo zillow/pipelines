@@ -3,7 +3,7 @@ include:
     ref: &include_ref 'v3'
     file: '/blocks/python.yml'
   - project: *include_project
-    ref: *include_ref
+    ref: 'alexla/AIP-6392' # *include_ref
     file: '/blocks/git.yml'
 
 stages:
@@ -14,16 +14,8 @@ variables:
   MAJOR_VERSION: "1"
   MINOR_VERSION: "0"
 
-git:tag:
-  extends: .git_tag
-
-build:publish-sdk:
-  extends: .aip_python_debian_image
-  stage: build
-  variables:
-    PY_LIBRARY_NAME: 'zillow-kfp'
-    KFP_VERSION_PATH: "sdk/python/kfp/__init__.py"
-  script:
+.py_library_version:
+  before_script:
   - KFP_VERSION=$(cat $KFP_VERSION_PATH | sed -nr "s/^__version__ = ['\"]([^'\"]*)['\"]$/\1/p")
   - |
     PY_LIBRARY_VERSION="${MAJOR_VERSION}.${MINOR_VERSION}.${CI_PIPELINE_IID}"
@@ -31,6 +23,38 @@ build:publish-sdk:
       PY_LIBRARY_VERSION="${PY_LIBRARY_VERSION}-dev.${CI_PIPELINE_IID}"
     fi
     PY_LIBRARY_VERSION="${PY_LIBRARY_VERSION}+${KFP_VERSION}"
+
+git:tag:
+  extends: .git_tag
+  before_script:
+  - !reference [.py_library_version, before_script]
+  - !reference [.generate_docker_image_version, before_script]
+  - |
+    TAG_VERSIONS=(
+      "${PY_LIBRARY_VERSION}"
+      "${IMAGE_TAG}"
+      "v${MAJOR_VERSION}.${MINOR_VERSION}.${CI_PIPELINE_IID}"
+      "v${MAJOR_VERSION}.${MINOR_VERSION}"
+      "v${MAJOR_VERSION}"
+    )
+  # TODO AIP-6392 Remove debugging rules.
+  rules:
+    # Never try to rebuild the images from the tag build.
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - when: always
+
+build:publish-sdk:
+  extends: .aip_python_debian_image
+  stage: build
+  variables:
+    PY_LIBRARY_NAME: 'zillow-kfp'
+    KFP_VERSION_PATH: "sdk/python/kfp/__init__.py"
+  before_script:
+  - !reference [.py_library_version, before_script]
+  script:
   # Now write back the zillow-kfp version back to the original location we found the original.
   - sed -i "s/\(__version__ = ['\"]\)[^'\"]*\(['\"]\)/\1${PY_LIBRARY_VERSION}\2/" $KFP_VERSION_PATH
   - cd sdk/python
@@ -53,7 +77,7 @@ build:publish-metadata-writer:
   variables:
     ARTIFACT_NAME: 'zillow-metadata-writer'
   before_script:
-    - !reference [.generate_docker_image_version, before_script]
+  - !reference [.generate_docker_image_version, before_script]
   script:
     - |
       docker build \
