@@ -3,7 +3,7 @@ include:
     ref: &include_ref 'v3'
     file: '/blocks/python.yml'
   - project: *include_project
-    ref: 'alexla/AIP-6392' # *include_ref
+    ref: 'alexla/configurable-tag-versions' # *include_ref
     file: '/blocks/git.yml'
 
 stages:
