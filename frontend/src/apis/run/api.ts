@@ -15,8 +15,7 @@
 import * as url from 'url';
 import * as portableFetch from 'portable-fetch';
 import { Configuration } from './configuration';
-
-const request = require('request');
+import { Apis } from '../../lib/Apis';
 
 const BASE_PATH = 'http://localhost'.replace(/\/+$/, '');
 
@@ -1709,16 +1708,24 @@ export class RunServiceApi extends BaseAPI {
   /**
    *
    * @summary Terminates an active run.
-   * @param {string} namespace The namespace of the pipeline.
+   * @param {string} run_id The ID of the run to be terminated.
    * @param {string} workflowName The Argo workflow name.
+   * @param {string} namespace The namespace of the pipeline.
    * @param {*} [options] Override http request option.
    * @throws {RequiredError}
    * @memberof RunServiceApi
    */
-  public terminateRunDelete(namespace: string, workflowName: string, options?: any) {
-    return request.delete(`api/v1/workflows/${namespace}/${workflowName}`);
+  public terminateRunDelete(run_id: string, workflowName: string, namespace: string, options?: any) {
+    return RunServiceApiFp(this.configuration).terminateRun(run_id, options)(
+      this.fetch,
+      this.basePath,
+    ).then(() => Apis.deleteArgoWorkflow(workflowName, namespace));
+    // return Apis.deleteArgoWorkflow(workflowName, namespace)
+    //   .then(() => RunServiceApiFp(this.configuration).terminateRun(run_id, options)(
+    //     this.fetch,
+    //     this.basePath,
+    // ));
   }
-
 
   /**
    *

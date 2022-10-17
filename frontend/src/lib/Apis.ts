@@ -109,6 +109,20 @@ export class Apis {
   }
 
   /**
+   * Delete Argo Workflow
+   */
+   public static deleteArgoWorkflow(workflowName: string, namespace: string): Promise<string> {
+    return this._fetch(
+      `argo/workflow?workflowName=${encodeURIComponent(workflowName)}&namespace=${encodeURIComponent(
+        namespace,
+      )}`,
+      undefined,
+      undefined,
+      { method: 'DELETE' },
+    );
+  }
+
+  /**
    * Get pod info
    */
   public static async getPodInfo(podName: string, podNamespace: string): Promise<JSONObject> {

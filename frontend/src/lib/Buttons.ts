@@ -355,18 +355,18 @@ export default class Buttons {
     return this;
   }
 
-  public terminateRunDelete(
+  public deleteArgoWorkflow(
     getSelectedTupleIds: () => string[][],
     useCurrentResource: boolean,
     callback: (selectedIds: string[], success: boolean) => void,
   ): Buttons {
     this._map[ButtonKeys.TERMINATE_RUN] = {
-      action: () => this._terminateRunDelete(getSelectedTupleIds(), useCurrentResource, callback),
+      action: () => this.deleteArgoWorkflow(getSelectedTupleIds(), useCurrentResource, callback),
       disabled: !useCurrentResource,
       disabledTitle: useCurrentResource ? undefined : 'Select at least one run to terminate',
       id: 'terminateRunBtn',
-      title: 'Terminate',
-      tooltip: 'Terminate execution of a run',
+      title: 'Delete Workflow',
+      tooltip: 'Delete workflow and pod of a run',
     };
     return this;
   }
@@ -549,7 +549,7 @@ export default class Buttons {
     );
   }
 
-  private _terminateRunDelete(
+  private _deleteArgoWorkflow(
     ids: string[][],
     useCurrentResource: boolean,
     callback: (_: string[], success: boolean) => void,
@@ -559,7 +559,7 @@ export default class Buttons {
       'Do you want to terminate this run? This action cannot be undone. This will terminate any' +
         ' running pods.',
       useCurrentResource,
-      id => Apis.runServiceApi.terminateRunDelete(id[0], id[1]),
+      id => Apis.runServiceApi.terminateRunDelete(id[0], id[1], id[2]).then((x) => {}),
       callback,
       'Terminate',
       'run',

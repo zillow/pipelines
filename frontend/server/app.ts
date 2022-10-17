@@ -31,6 +31,7 @@ import { podInfoHandler, podEventsHandler } from './handlers/pod-info';
 import { getClusterNameHandler, getProjectIdHandler } from './handlers/gke-metadata';
 import { getAllowCustomVisualizationsHandler } from './handlers/vis';
 import { getIndexHTMLHandler } from './handlers/index-html';
+import { workflowDeleteHandler } from './handlers/workflow';
 
 import proxyMiddleware from './proxy-middleware';
 import { Server } from 'http';
@@ -162,6 +163,9 @@ function createUIServer(options: UIConfigs) {
   registerHandler(app.get, '/apps/tensorboard', tensorboardGetHandler);
   registerHandler(app.delete, '/apps/tensorboard', tensorboardDeleteHandler);
   registerHandler(app.post, '/apps/tensorboard', tensorboardCreateHandler);
+
+  // BUG(talebz): AIP-6692 WFSDK: Disable Retry button
+  registerHandler(app.delete, '/argo/workflow', workflowDeleteHandler)
 
   /** Pod logs - conditionally stream through API server, otherwise directly from k8s and archive */
   if (options.artifacts.streamLogsFromServerApi) {

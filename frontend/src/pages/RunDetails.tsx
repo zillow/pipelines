@@ -224,8 +224,24 @@ class RunDetails extends Page<RunDetailsInternalProps, RunDetailsState> {
               : [],
           true,
         )
-        .terminateRunDelete(
-          () => [[this.state.namespace!, this.state.runMetadata!.name!]],
+        .terminateRun(
+          () =>
+            this.state.runMetadata
+              ? [this.state.runMetadata!.id!]
+              : runIdFromParams
+              ? [runIdFromParams]
+              : [],
+          true,
+          () => this.refresh(),
+        )
+        .deleteArgoWorkflow(
+          () => [
+            [
+              this.state.runMetadata!.id! || runIdFromParams, 
+              this.state.workflow?.metadata.name || '-',
+              this.state.namespace!, 
+            ]
+          ],
           true,
           () => this.refresh(),
         )

@@ -326,6 +326,27 @@ export async function getArgoWorkflow(workflowName: string): Promise<PartialArgo
 }
 
 /**
+ * Deletes the argo workflow CRD.
+ * @param workflowName name of the argo workflow
+ * @param namespace namespace the workflow resides in
+ */
+ export async function deleteArgoWorkflow(workflowName: string, namespace: string): Promise<void> {
+  if (!namespace) {
+    throw new Error(`namespace cannot be null`);
+  }
+
+  const deleteOption = new V1DeleteOptions();
+  await k8sV1CustomObjectClient.deleteNamespacedCustomObject(
+    workflowGroup,
+    workflowVersion,
+    namespace,
+    workflowPlural,
+    workflowName,
+    deleteOption
+  );
+}
+
+/**
  * Retrieves k8s secret by key and decode from base64.
  * @param name name of the secret
  * @param key key in the secret
