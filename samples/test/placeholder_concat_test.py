@@ -14,7 +14,7 @@
 
 import kfp
 from .placeholder_concat import pipeline_with_concat_placeholder
-from .util import run_pipeline_func, TestCase
+from kfp.samples.test.utils import run_pipeline_func, TestCase
 
 
 def verify(run, run_id: str, **kwargs):
@@ -24,10 +24,6 @@ def verify(run, run_id: str, **kwargs):
 
 
 run_pipeline_func([
-    TestCase(
-        pipeline_func=pipeline_with_concat_placeholder,
-        verify_func=verify,
-    ),
     TestCase(
         pipeline_func=pipeline_with_concat_placeholder,
         verify_func=verify,

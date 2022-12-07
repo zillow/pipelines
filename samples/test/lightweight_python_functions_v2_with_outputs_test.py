@@ -20,7 +20,7 @@ import os
 from minio import Minio
 
 from .lightweight_python_functions_v2_with_outputs import pipeline
-from .util import KfpMlmdClient, run_pipeline_func, TestCase
+from kfp.samples.test.utils import KfpMlmdClient, run_pipeline_func, TestCase
 
 
 def verify(run: kfp_server_api.ApiRun, mlmd_connection_config, **kwargs):
@@ -43,8 +43,7 @@ def verify(run: kfp_server_api.ApiRun, mlmd_connection_config, **kwargs):
         f'{host}:{port}',
         access_key='minio',
         secret_key='minio123',
-        secure=False
-    )
+        secure=False)
     bucket, key = output.uri[len('minio://'):].split('/', 1)
     print(f'bucket={bucket} key={key}')
     response = minio.get_object(bucket, key)
@@ -55,19 +54,6 @@ def verify(run: kfp_server_api.ApiRun, mlmd_connection_config, **kwargs):
 run_pipeline_func([
     TestCase(
         pipeline_func=pipeline,
-        mode=kfp.dsl.PipelineExecutionMode.V2_COMPATIBLE
-    ),
-    TestCase(
-        pipeline_func=pipeline,
         mode=kfp.dsl.PipelineExecutionMode.V2_ENGINE,
-    ),
-    # Verify overriding pipeline root to MinIO
-    TestCase(
-        pipeline_func=pipeline,
-        verify_func=verify,
-        mode=kfp.dsl.PipelineExecutionMode.V2_COMPATIBLE,
-        arguments={
-            kfp.dsl.ROOT_PARAMETER_NAME: 'minio://mlpipeline/override/artifacts'
-        },
     ),
 ])

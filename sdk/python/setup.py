@@ -23,16 +23,19 @@ NAME = 'zillow-kfp'  # 'kfp'
 # NOTICE, after any updates to the following, ./requirements.in should be updated
 # accordingly.
 REQUIRES = [
-    'absl-py>=0.9,<=0.11',
+    'absl-py>=0.9,<2',
     'PyYAML>=5.3,<6',
+    # Pin google-api-core version for the bug fixing in 1.31.5
+    # https://github.com/googleapis/python-api-core/releases/tag/v1.31.5
+    'google-api-core>=1.31.5,<3.0.0dev,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0',
     # `Blob.from_string` was introduced in google-cloud-storage 1.20.0
     # https://github.com/googleapis/python-storage/blob/master/CHANGELOG.md#1200
-    'google-cloud-storage>=1.20.0,<2',
+    'google-cloud-storage>=1.20.0,<3',
     'kubernetes>=8.0.0,<25',
     # google-api-python-client v2 doesn't work for private dicovery by default:
     # https://github.com/googleapis/google-api-python-client/issues/1225#issuecomment-791058235
     'google-api-python-client>=1.7.8,<2',
-    'google-auth>=1.6.1,<2',
+    'google-auth>=1.6.1,<3',
     'requests-toolbelt>=0.8.0,<1',
     'cloudpickle>=2.0.0,<3',
     # Update the upper version whenever a new major version of the
@@ -41,13 +44,13 @@ REQUIRES = [
     # kfp-server-api.
     # Note, please also update ./requirements.in
     'kfp-server-api>=1.1.2,<2.0.0',
-    'jsonschema>=3.0.1,<4',
+    'jsonschema>=3.0.1,<5',
     'tabulate>=0.8.6,<1',
     'click>=7.1.2,<9',
     'Deprecated>=1.2.7,<2',
     'strip-hints>=0.1.8,<1',
     'docstring-parser>=0.7.3,<1',
-    'kfp-pipeline-spec>=0.1.13,<0.2.0',
+    'kfp-pipeline-spec>=0.1.16,<0.2.0',
     'fire>=0.3.1,<1',
     'protobuf>=3.13.0,<4',
     'uritemplate>=3.0.1,<4',
@@ -55,11 +58,7 @@ REQUIRES = [
     'typer>=0.3.2,<1.0',
     # Standard library backports
     'dataclasses;python_version<"3.7"',
-    'typing-extensions>=3.7.4,<4;python_version<"3.9"',
-]
-
-TESTS_REQUIRE = [
-    'frozendict',
+    'typing-extensions>=3.7.4,<5;python_version<"3.9"',
 ]
 
 EXTRAS_REQUIRE = {
@@ -83,10 +82,18 @@ def find_version(*file_path_parts):
     raise RuntimeError('Unable to find version string.')
 
 
+def read_readme():
+    readme_path = os.path.join(os.path.dirname(__file__), 'README.md')
+    with open(readme_path) as f:
+        return f.read()
+
+
 setup(
     name=NAME,
     version=find_version('kfp', '__init__.py'),
     description='KubeFlow Pipelines SDK',
+    long_description=read_readme(),
+    long_description_content_type='text/markdown',
     author='The Kubeflow Authors',
     url="https://github.com/kubeflow/pipelines",
     project_urls={
@@ -100,7 +107,6 @@ setup(
             "https://github.com/kubeflow/pipelines/blob/master/sdk/RELEASE.md",
     },
     install_requires=REQUIRES,
-    tests_require=TESTS_REQUIRE,
     extras_require=EXTRAS_REQUIRE,
     packages=[
         'kfp',
@@ -116,15 +122,9 @@ setup(
         'kfp.notebook',
         'kfp.v2',
         'kfp.v2.compiler',
-        'kfp.v2.compiler.experimental',
         'kfp.v2.components',
         'kfp.v2.components.types',
-        'kfp.v2.components.types.experimental',
-        'kfp.v2.components.experimental',
         'kfp.v2.dsl',
-        'kfp.v2.dsl.experimental',
-        'kfp.v2.google.client',
-        'kfp.v2.google.experimental',
     ],
     classifiers=[
         'Intended Audience :: Developers',

@@ -22,6 +22,8 @@
 # The field `path` corresponds to the test's python module path
 # e.g. if folder path is `samples/test/fail_test.py`, then module path is
 # `samples.test.fail_test`.
+
+# Core Samples
 - name: condition
   path: samples.core.condition.condition_test
 - name: nested_condition
@@ -46,15 +48,47 @@
   path: samples.core.XGBoost.xgboost_sample_test
 - name: use_run_id
   path: samples.core.use_run_info.use_run_id_test
+- name: multiple_outputs
+  path: samples.core.multiple_outputs.multiple_outputs_test
+- name: lightweight_component
+  path: samples.core.lightweight_component.lightweight_component_test
+- name: dsl_static_type_checking
+  path: samples.core.dsl_static_type_checking.dsl_static_type_checking_test
+- name: pipeline_transformers
+  path: samples.core.pipeline_transformers.pipeline_transformers_test
+- name: secret
+  path: samples.core.secret.secret_test
+- name: sidecar
+  path: samples.core.sidecar.sidecar_test
+- name: execution_order
+  path: samples.core.execution_order.execution_order_test
+- name: imagepullsecrets
+  path: samples.core.imagepullsecrets.imagepullsecrets_test
+- name: retry
+  path: samples.core.retry.retry_test
+- name: preemptible_tpu_gpu
+  path: samples.core.preemptible_tpu_gpu.preemptible_tpu_gpu_test
+- name: volume_snapshot_ops
+  path: samples.core.volume_snapshot_ops.volume_snapshot_ops_test
+- name: resource_ops
+  path: samples.core.resource_ops.resource_ops_test
+- name: caching
+  path: samples.core.caching.caching_test
+- name: parallelism_sub_dag
+  path: samples.core.parallelism_sub_dag.parallelism_sub_dag_test
 
+# Test Samples
 - name: fail
   path: samples.test.fail_test
+- name: fail_parameter_value_missing
+  path: samples.test.fail_parameter_value_missing_test
 - name: two_step
   path: samples.test.two_step_test
 - name: two_step_with_uri_placeholder
   path: samples.test.two_step_with_uri_placeholder_test
-- name: cache_v2_compatible
-  path: samples.test.cache_v2_compatible_test
+# TODO(capri-xiyue): re-enable cache v2 tests
+# - name: cache_v2_compatible
+#   path: samples.test.cache_v2_compatible_test
 - name: after
   path: samples.test.after_test
 - name: legacy_data_passing
@@ -65,10 +99,6 @@
   path: samples.test.reused_component_test
 - name: legacy_exit_handler
   path: samples.test.legacy_exit_handler_test
-- name: various_io_types # TODO(Bobgy): investigate failure
-  path: samples.test.various_io_types
-- name: simple_pipeline_without_importer # TODO(Bobgy): investigate failure
-  path: samples.test.simple_pipeline_without_importer_test
 - name: tensorboard_minio
   path: samples.core.visualization.tensorboard_minio_test
 - name: lightweight_python_functions_v2_with_outputs
@@ -77,18 +107,21 @@
   path: samples.test.lightweight_python_functions_v2_pipeline_test
 - name: placeholder_concat
   path: samples.test.placeholder_concat_test
+- name: placeholder_if
+  path: samples.test.placeholder_if_test
+- name: metrics_visualization_v1
+  path: samples.test.metrics_visualization_v1_test
 - name: metrics_visualization_v2
   path: samples.test.metrics_visualization_v2_test
-# TODO(Bobgy): This is currently passing, should it fail?
-# - name: fail_parameter_value_missing
-#   path: samples.test.fail_parameter_value_missing_test
 
-# v2 samples
+# V2 Samples
 - name: hello_world
   path: samples.v2.hello_world_test
 - name: producer_consumer_param
   path: samples.v2.producer_consumer_param_test
 - name: pipeline_with_importer
   path: samples.v2.pipeline_with_importer_test
-- name: cache_v2
-  path: samples.v2.cache_test
+# TODO(capri-xiyue): Re-enable after figuring out V2 Engine
+# and protobuf.Value support.
+# - name: cache_v2
+#   path: samples.v2.cache_test

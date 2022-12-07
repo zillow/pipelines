@@ -25,14 +25,13 @@ from kfp.v2.components.types.artifact_types import (Artifact, Dataset, Metrics,
                                                     Model)
 from kfp.v2.components.types.type_annotations import (Input, InputPath, Output,
                                                       OutputPath)
+from kfp.v2.components.task_final_status import PipelineTaskFinalStatus
 
 _EXECUTOR_INPUT = """\
 {
   "inputs": {
-    "parameters": {
-      "input_parameter": {
-        "stringValue": "Hello, KFP"
-      }
+    "parameterValues": {
+      "input_parameter": "Hello, KFP"
     },
     "artifacts": {
       "input_artifact_one_path": {
@@ -78,10 +77,10 @@ _EXECUTOR_INPUT = """\
     },
     "parameters": {
       "output_parameter_path": {
-        "outputFile": "gs://some-bucket/some_task/nested/output_parameter"
+        "outputFile": "%(test_dir)s/gcs/some-bucket/some_task/nested/output_parameter"
       }
     },
-    "outputFile": "%s/output_metadata.json"
+    "outputFile": "%(test_dir)s/output_metadata.json"
   }
 }
 """
@@ -89,13 +88,13 @@ _EXECUTOR_INPUT = """\
 
 class ExecutorTest(unittest.TestCase):
 
-    def setUp(self):
-        self.maxDiff = None
-        self._test_dir = tempfile.mkdtemp()
-        artifact_types._GCS_LOCAL_MOUNT_PREFIX = self._test_dir + '/'
-        artifact_types._MINIO_LOCAL_MOUNT_PREFIX = self._test_dir + '/minio/'
-        artifact_types._S3_LOCAL_MOUNT_PREFIX = self._test_dir + '/s3/'
-        return super().setUp()
+    @classmethod
+    def setUp(cls):
+        cls.maxDiff = None
+        cls._test_dir = tempfile.mkdtemp()
+        artifact_types._GCS_LOCAL_MOUNT_PREFIX = cls._test_dir + '/'
+        artifact_types._MINIO_LOCAL_MOUNT_PREFIX = cls._test_dir + '/minio/'
+        artifact_types._S3_LOCAL_MOUNT_PREFIX = cls._test_dir + '/s3/'
 
     def _get_executor(
             self,
@@ -104,7 +103,8 @@ class ExecutorTest(unittest.TestCase):
         if executor_input is None:
             executor_input = _EXECUTOR_INPUT
 
-        executor_input_dict = json.loads(executor_input % self._test_dir)
+        executor_input_dict = json.loads(executor_input %
+                                         {'test_dir': self._test_dir})
 
         return executor.Executor(
             executor_input=executor_input_dict, function_to_execute=func)
@@ -147,11 +147,9 @@ class ExecutorTest(unittest.TestCase):
         def test_func(output_parameter_path: OutputPath(str)):
             # Test that output parameters just use the passed in filename.
             self.assertEqual(
-                output_parameter_path,
-                'gs://some-bucket/some_task/nested/output_parameter')
+                output_parameter_path, self._test_dir +
+                '/gcs/some-bucket/some_task/nested/output_parameter')
 
-            # Test writing to the path succeeds. This fails if parent directories
-            # don't exist.
             with open(output_parameter_path, 'w') as f:
                 f.write('Hello, World!')
 
@@ -217,16 +215,10 @@ class ExecutorTest(unittest.TestCase):
         executor_input = """\
     {
       "inputs": {
-        "parameters": {
-          "first_message": {
-            "stringValue": "Hello"
-          },
-          "second_message": {
-            "stringValue": ""
-          },
-          "third_message": {
-            "stringValue": "World"
-          }
+        "parameterValues": {
+          "first_message": "Hello",
+          "second_message": "",
+          "third_message": "World"
         }
       },
       "outputs": {
@@ -235,7 +227,7 @@ class ExecutorTest(unittest.TestCase):
             "outputFile": "gs://some-bucket/output"
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
@@ -252,10 +244,8 @@ class ExecutorTest(unittest.TestCase):
                   'r') as f:
             output_metadata = json.loads(f.read())
         self.assertDictEqual(output_metadata, {
-            "parameters": {
-                "Output": {
-                    "stringValue": "Hello, , World"
-                }
+            "parameterValues": {
+                "Output": "Hello, , World"
             },
         })
 
@@ -263,13 +253,9 @@ class ExecutorTest(unittest.TestCase):
         executor_input = """\
     {
       "inputs": {
-        "parameters": {
-          "first": {
-            "intValue": 40
-          },
-          "second": {
-            "intValue": 2
-          }
+        "parameterValues": {
+          "first": 40,
+          "second": 2
         }
       },
       "outputs": {
@@ -278,7 +264,7 @@ class ExecutorTest(unittest.TestCase):
             "outputFile": "gs://some-bucket/output"
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
@@ -291,10 +277,8 @@ class ExecutorTest(unittest.TestCase):
                   'r') as f:
             output_metadata = json.loads(f.read())
         self.assertDictEqual(output_metadata, {
-            "parameters": {
-                "Output": {
-                    "intValue": 42
-                }
+            "parameterValues": {
+                "Output": 42
             },
         })
 
@@ -302,13 +286,9 @@ class ExecutorTest(unittest.TestCase):
         executor_input = """\
     {
       "inputs": {
-        "parameters": {
-          "first": {
-            "doubleValue": 0.0
-          },
-          "second": {
-            "doubleValue": 1.2
-          }
+        "parameterValues": {
+          "first": 0.0,
+          "second": 1.2
         }
       },
       "outputs": {
@@ -317,7 +297,7 @@ class ExecutorTest(unittest.TestCase):
             "outputFile": "gs://some-bucket/output"
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
@@ -330,10 +310,8 @@ class ExecutorTest(unittest.TestCase):
                   'r') as f:
             output_metadata = json.loads(f.read())
         self.assertDictEqual(output_metadata, {
-            "parameters": {
-                "Output": {
-                    "doubleValue": 1.2
-                }
+            "parameterValues": {
+                "Output": 1.2
             },
         })
 
@@ -341,13 +319,9 @@ class ExecutorTest(unittest.TestCase):
         executor_input = """\
     {
       "inputs": {
-        "parameters": {
-          "first": {
-            "intValue": 40
-          },
-          "second": {
-            "intValue": 2
-          }
+        "parameterValues": {
+          "first": 40,
+          "second": 2
         }
       },
       "outputs": {
@@ -356,7 +330,7 @@ class ExecutorTest(unittest.TestCase):
             "outputFile": "gs://some-bucket/output"
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
@@ -369,10 +343,8 @@ class ExecutorTest(unittest.TestCase):
                   'r') as f:
             output_metadata = json.loads(f.read())
         self.assertDictEqual(output_metadata, {
-            "parameters": {
-                "Output": {
-                    "stringValue": "[40, 2]"
-                }
+            "parameterValues": {
+                "Output": [40, 2]
             },
         })
 
@@ -380,13 +352,9 @@ class ExecutorTest(unittest.TestCase):
         executor_input = """\
     {
       "inputs": {
-        "parameters": {
-          "first": {
-            "intValue": 40
-          },
-          "second": {
-            "intValue": 2
-          }
+        "parameterValues": {
+          "first": 40,
+          "second": 2
         }
       },
       "outputs": {
@@ -395,7 +363,7 @@ class ExecutorTest(unittest.TestCase):
             "outputFile": "gs://some-bucket/output"
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
@@ -407,25 +375,22 @@ class ExecutorTest(unittest.TestCase):
         with open(os.path.join(self._test_dir, 'output_metadata.json'),
                   'r') as f:
             output_metadata = json.loads(f.read())
-        self.assertDictEqual(output_metadata, {
-            "parameters": {
-                "Output": {
-                    "stringValue": "{\"first\": 40, \"second\": 2}"
-                }
-            },
-        })
+        self.assertDictEqual(
+            output_metadata, {
+                "parameters": {
+                    "Output": {
+                        "stringValue": "{\"first\": 40, \"second\": 2}"
+                    }
+                },
+            })
 
     def test_function_with_typed_list_output(self):
         executor_input = """\
     {
       "inputs": {
-        "parameters": {
-          "first": {
-            "intValue": 40
-          },
-          "second": {
-            "intValue": 2
-          }
+        "parameterValues": {
+          "first": 40,
+          "second": 2
         }
       },
       "outputs": {
@@ -434,7 +399,7 @@ class ExecutorTest(unittest.TestCase):
             "outputFile": "gs://some-bucket/output"
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
@@ -447,10 +412,8 @@ class ExecutorTest(unittest.TestCase):
                   'r') as f:
             output_metadata = json.loads(f.read())
         self.assertDictEqual(output_metadata, {
-            "parameters": {
-                "Output": {
-                    "stringValue": "[40, 2]"
-                }
+            "parameterValues": {
+                "Output": [40, 2]
             },
         })
 
@@ -458,13 +421,9 @@ class ExecutorTest(unittest.TestCase):
         executor_input = """\
     {
       "inputs": {
-        "parameters": {
-          "first": {
-            "intValue": 40
-          },
-          "second": {
-            "intValue": 2
-          }
+        "parameterValues": {
+          "first": 40,
+          "second": 2
         }
       },
       "outputs": {
@@ -473,7 +432,7 @@ class ExecutorTest(unittest.TestCase):
             "outputFile": "gs://some-bucket/output"
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
@@ -485,25 +444,22 @@ class ExecutorTest(unittest.TestCase):
         with open(os.path.join(self._test_dir, 'output_metadata.json'),
                   'r') as f:
             output_metadata = json.loads(f.read())
-        self.assertDictEqual(output_metadata, {
-            "parameters": {
-                "Output": {
-                    "stringValue": "{\"first\": 40, \"second\": 2}"
-                }
-            },
-        })
+        self.assertDictEqual(
+            output_metadata, {
+                "parameters": {
+                    "Output": {
+                        "stringValue": "{\"first\": 40, \"second\": 2}"
+                    }
+                },
+            })
 
     def test_artifact_output(self):
         executor_input = """\
     {
       "inputs": {
-        "parameters": {
-          "first": {
-            "stringValue": "Hello"
-          },
-          "second": {
-            "stringValue": "World"
-          }
+        "parameterValues": {
+          "first":  "Hello",
+          "second": "World"
         }
       },
       "outputs": {
@@ -520,7 +476,7 @@ class ExecutorTest(unittest.TestCase):
             ]
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
@@ -574,7 +530,7 @@ class ExecutorTest(unittest.TestCase):
             "outputFile": "gs://some-bucket/output_string"
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
@@ -617,13 +573,9 @@ class ExecutorTest(unittest.TestCase):
                             }]
                         }
                     },
-                    "parameters": {
-                        "output_string": {
-                            "stringValue": "Some output string"
-                        },
-                        "output_int": {
-                            "intValue": 101
-                        }
+                    "parameterValues": {
+                        "output_int": 101,
+                        "output_string": "Some output string"
                     },
                 })
 
@@ -637,12 +589,69 @@ class ExecutorTest(unittest.TestCase):
         executor_input = """\
     {
       "inputs": {
+        "parameterValues": {
+          "first_message": "Hello",
+          "second_message": "World"
+        }
+      },
+      "outputs": {
         "parameters": {
-          "first_message": {
-            "stringValue": "Hello"
-          },
-          "second_message": {
-            "stringValue": "World"
+          "output": {
+            "outputFile": "gs://some-bucket/output"
+          }
+        },
+        "outputFile": "%(test_dir)s/output_metadata.json"
+      }
+    }
+    """
+
+        def test_func(
+            first_message: str = 'default value',
+            second_message: Optional[str] = None,
+            third_message: Optional[str] = None,
+            forth_argument: str = 'abc',
+            fifth_argument: int = 100,
+            sixth_argument: float = 1.23,
+            seventh_argument: bool = True,
+            eighth_argument: list = [1, 2],
+            ninth_argument: dict = {'a': 1},
+        ) -> str:
+            return (f'{first_message} ({type(first_message)}), '
+                    f'{second_message} ({type(second_message)}), '
+                    f'{third_message} ({type(third_message)}), '
+                    f'{forth_argument} ({type(forth_argument)}), '
+                    f'{fifth_argument} ({type(fifth_argument)}), '
+                    f'{sixth_argument} ({type(sixth_argument)}), '
+                    f'{seventh_argument} ({type(seventh_argument)}), '
+                    f'{eighth_argument} ({type(eighth_argument)}), '
+                    f'{ninth_argument} ({type(ninth_argument)}).')
+
+        self._get_executor(test_func, executor_input).execute()
+        with open(os.path.join(self._test_dir, 'output_metadata.json'),
+                  'r') as f:
+            output_metadata = json.loads(f.read())
+        self.assertDictEqual(
+            output_metadata, {
+                "parameterValues": {
+                    "Output": "Hello (<class 'str'>), "
+                              "World (<class 'str'>), "
+                              "None (<class 'NoneType'>), "
+                              "abc (<class 'str'>), "
+                              "100 (<class 'int'>), "
+                              "1.23 (<class 'float'>), "
+                              "True (<class 'bool'>), "
+                              "[1, 2] (<class 'list'>), "
+                              "{'a': 1} (<class 'dict'>)."
+                },
+            })
+
+    def test_function_with_pipeline_task_final_status(self):
+        executor_input = """\
+    {
+      "inputs": {
+        "parameters": {
+          "status": {
+            "stringValue": "{\\"error\\":{\\"code\\":9,\\"message\\":\\"The DAG failed because some tasks failed. The failed tasks are: [fail-op].\\"},\\"pipelineJobResourceName\\":\\"projects/123/locations/us-central1/pipelineJobs/pipeline-456\\",\\"pipelineTaskName\\":\\"upstream-task\\",\\"state\\":\\"FAILED\\"}"
           }
         }
       },
@@ -652,19 +661,17 @@ class ExecutorTest(unittest.TestCase):
             "outputFile": "gs://some-bucket/output"
           }
         },
-        "outputFile": "%s/output_metadata.json"
+        "outputFile": "%(test_dir)s/output_metadata.json"
       }
     }
     """
 
-        def test_func(
-            first_message: str = 'default value',
-            second_message: Optional[str] = None,
-            third_message: Optional[str] = None,
-        ) -> str:
-            return (f'{first_message} ({type(first_message)}), '
-                    f'{second_message} ({type(second_message)}), '
-                    f'{third_message} ({type(third_message)}).')
+        def test_func(status: PipelineTaskFinalStatus) -> str:
+            return (f'Pipeline status: {status.state}\n'
+                    f'Job resource name: {status.pipeline_job_resource_name}\n'
+                    f'Pipeline task name: {status.pipeline_task_name}\n'
+                    f'Error code: {status.error_code}\n'
+                    f'Error message: {status.error_message}')
 
         self._get_executor(test_func, executor_input).execute()
         with open(os.path.join(self._test_dir, 'output_metadata.json'),
@@ -672,11 +679,14 @@ class ExecutorTest(unittest.TestCase):
             output_metadata = json.loads(f.read())
         self.assertDictEqual(
             output_metadata, {
-                "parameters": {
-                    "Output": {
-                        "stringValue": "Hello (<class 'str'>), "
-                                       "World (<class 'str'>), "
-                                       "None (<class 'NoneType'>)."
+                'parameters': {
+                    'Output': {
+                        'stringValue':
+                            'Pipeline status: FAILED\n'
+                            'Job resource name: projects/123/locations/us-central1/pipelineJobs/pipeline-456\n'
+                            'Pipeline task name: upstream-task\n'
+                            'Error code: 9\n'
+                            'Error message: The DAG failed because some tasks failed. The failed tasks are: [fail-op].'
                     }
                 },
             })

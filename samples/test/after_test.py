@@ -14,11 +14,10 @@
 
 import kfp
 from .after import my_pipeline
-from .util import run_pipeline_func, TestCase
+from kfp.samples.test.utils import run_pipeline_func, TestCase
 
 run_pipeline_func([
-    TestCase(pipeline_func=my_pipeline),
     TestCase(
-        pipeline_func=my_pipeline, mode=kfp.dsl.PipelineExecutionMode.V2_ENGINE
-    ),
+        pipeline_func=my_pipeline,
+        mode=kfp.dsl.PipelineExecutionMode.V2_ENGINE),
 ])

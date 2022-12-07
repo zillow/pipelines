@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from kfp import components
-from kfp import dsl
+from kfp.v2 import components
+from kfp.v2 import dsl
 from kfp.v2 import compiler
 
 chicago_taxi_dataset_op = components.load_component_from_url(
@@ -60,7 +60,7 @@ def xgboost_pipeline():
 
     # Training and prediction on dataset in Apache Parquet format
     training_data_parquet = convert_csv_to_apache_parquet_op(
-        training_data_csv).output
+        data=training_data_csv).output
 
     model_trained_on_parquet = xgboost_train_on_parquet_op(
         training_data=training_data_parquet,

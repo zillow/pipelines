@@ -1,4 +1,4 @@
-# Copyright 2020 The Kubeflow Authors
+# Copyright 2020,2021 The Kubeflow Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,7 @@
 from kfp import components
 from kfp import dsl
 
-component_op = components.load_component_from_text(
-    '''
+component_op = components.load_component_from_text('''
 name: Component with optional inputs
 inputs:
 - {name: required_input, type: String, optional: false}
@@ -45,19 +44,16 @@ implementation:
         else:
           - --arg2
           - 'default value'
-
-'''
-)
+''')
 
 
 @dsl.pipeline(name='one-step-pipeline-with-if-placeholder-supply-both')
-def pipeline_both(
-    input0: str = 'input0', input1: str = 'input1', input2: str = 'input2'
-):
+def pipeline_both(input0: str = 'input0',
+                  input1: str = 'input1',
+                  input2: str = 'input2'):
     # supply both optional_input_1 and optional_input_2
     component = component_op(
-        required_input=input0, optional_input_1=input1, optional_input_2=input2
-    )
+        required_input=input0, optional_input_1=input1, optional_input_2=input2)
 
 
 @dsl.pipeline(name='one-step-pipeline-with-if-placeholder-supply-none')

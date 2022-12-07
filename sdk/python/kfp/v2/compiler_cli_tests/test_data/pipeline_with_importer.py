@@ -14,7 +14,6 @@
 """Pipeline using dsl.importer."""
 
 from typing import NamedTuple
-from kfp import components
 from kfp.v2 import compiler
 from kfp.v2 import dsl
 from kfp.v2.dsl import component, importer, Dataset, Model, Input
@@ -40,7 +39,7 @@ def train(
     return output(scalar, model)
 
 
-@components.create_component_from_func
+@component
 def pass_through_op(value: str) -> str:
     return value
 
@@ -51,16 +50,28 @@ def my_pipeline(dataset2: str = 'gs://ml-pipeline-playground/shakespeare2.txt'):
     importer1 = importer(
         artifact_uri='gs://ml-pipeline-playground/shakespeare1.txt',
         artifact_class=Dataset,
-        reimport=False)
+        reimport=False,
+        metadata={'key': 'value'})
     train1 = train(dataset=importer1.output)
 
     with dsl.Condition(train1.outputs['scalar'] == '123'):
         importer2 = importer(
-            artifact_uri=dataset2, artifact_class=Dataset, reimport=True)
+            artifact_uri=dataset2,
+            artifact_class=Dataset,
+            reimport=True,
+            metadata={
+                dataset2: dataset2,
+                'other': train1.outputs['scalar']
+            })
         train(dataset=importer2.output)
 
     importer3 = importer(
-        artifact_uri=pass_through_op(dataset2).output, artifact_class=Dataset)
+        artifact_uri=pass_through_op(dataset2).output,
+        artifact_class=Dataset,
+        metadata={
+            dataset2: dataset2,
+            'other': train1.outputs['scalar']
+        })
     train(dataset=importer3.output)
 
 

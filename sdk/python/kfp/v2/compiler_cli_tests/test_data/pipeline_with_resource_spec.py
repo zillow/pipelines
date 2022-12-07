@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from kfp import components
+from kfp.v2 import components
 from kfp.v2 import dsl
-import kfp.v2.compiler as compiler
+from kfp.v2 import compiler
 import pathlib
 
 test_data_dir = pathlib.Path(__file__).parent / 'component_yaml'
@@ -39,9 +39,7 @@ def my_pipeline(input_location: str = 'gs://test-bucket/pipeline_root',
             examples=ingestor.outputs['examples'],
             optimizer=optimizer,
             n_epochs=n_epochs).set_cpu_limit('4').set_memory_limit(
-                '14Gi').add_node_selector_constraint(
-                    'cloud.google.com/gke-accelerator',
-                    'tpu-v3').set_gpu_limit(1))
+                '14Gi').add_node_selector_constraint('tpu-v3').set_gpu_limit('1'))
 
 
 if __name__ == '__main__':

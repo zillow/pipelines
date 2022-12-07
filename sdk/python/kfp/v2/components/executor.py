@@ -16,6 +16,7 @@ import json
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from kfp.v2.components.types import artifact_types, type_annotations
+from kfp.v2.components import task_final_status
 
 
 class Executor():
@@ -68,25 +69,13 @@ class Executor():
 
     def _get_input_parameter_value(self, parameter_name: str,
                                    parameter_type: Any):
-        parameter = self._input.get('inputs',
-                                    {}).get('parameters',
-                                            {}).get(parameter_name, None)
-        if parameter is None:
-            return None
+        parameter_values = self._input.get('inputs',
+                                           {}).get('parameterValues', None)
 
-        if parameter.get('stringValue') is not None:
-            if parameter_type == str:
-                return parameter['stringValue']
-            elif parameter_type == bool:
-                # Use `.lower()` so it can also handle 'True' and 'False' (resulted from
-                # `str(True)` and `str(False)`, respectively.
-                return json.loads(parameter['stringValue'].lower())
-            else:
-                return json.loads(parameter['stringValue'])
-        elif parameter.get('intValue') is not None:
-            return int(parameter['intValue'])
-        elif parameter.get('doubleValue') is not None:
-            return float(parameter['doubleValue'])
+        if parameter_values is not None:
+            return parameter_values.get(parameter_name, None)
+
+        return None
 
     def _get_output_parameter_path(self, parameter_name: str):
         parameter = self._input.get('outputs',
@@ -120,20 +109,22 @@ class Executor():
     def _write_output_parameter_value(self, name: str,
                                       value: Union[str, int, float, bool, dict,
                                                    list, Dict, List]):
-        if type(value) == str:
-            output = {'stringValue': value}
-        elif type(value) == int:
-            output = {'intValue': value}
-        elif type(value) == float:
-            output = {'doubleValue': value}
+        if isinstance(value, (float, int)):
+            output = str(value)
+        elif isinstance(value, str):
+            # value is already a string.
+            output = value
+        elif isinstance(value, (bool, list, dict)):
+            output = json.dumps(value)
         else:
-            # For bool, list, dict, List, Dict, json serialize the value.
-            output = {'stringValue': json.dumps(value)}
+            raise ValueError(
+                'Unable to serialize unknown type `{}` for parameter'
+                ' input with value `{}`'.format(value, type(value)))
 
-        if not self._executor_output.get('parameters'):
-            self._executor_output['parameters'] = {}
+        if not self._executor_output.get('parameterValues'):
+            self._executor_output['parameterValues'] = {}
 
-        self._executor_output['parameters'][name] = output
+        self._executor_output['parameterValues'][name] = value
 
     def _write_output_artifact_payload(self, name: str, value: Any):
         path = self._get_output_artifact_path(name)
@@ -250,13 +241,13 @@ class Executor():
                     'Unknown return type: {}. Must be one of `str`, `int`, `float`, a'
                     ' subclass of `Artifact`, or a NamedTuple collection of these types.'
                     .format(self._return_annotation))
-
         import os
-        os.makedirs(
-            os.path.dirname(self._input['outputs']['outputFile']),
-            exist_ok=True)
-        with open(self._input['outputs']['outputFile'], 'w') as f:
-            f.write(json.dumps(self._executor_output))
+        executor_output_path = self._input['outputs']['outputFile']
+        # This check is to reduce the likelihood that two or more workers (in a distributed training/compute strategy) attempt to write to the same executor output file at the same time using gcsfuse. Do not remove until fixed by gcsfuse.
+        if not os.path.exists(executor_output_path):
+            os.makedirs(os.path.dirname(executor_output_path), exist_ok=True)
+            with open(executor_output_path, 'w') as f:
+                f.write(json.dumps(self._executor_output))
 
     def execute(self):
         annotations = inspect.getfullargspec(self._func).annotations
@@ -273,8 +264,23 @@ class Executor():
             # `Optional[]` to get the actual parameter type.
             v = type_annotations.maybe_strip_optional_from_annotation(v)
 
-            if self._is_parameter(v):
-                func_kwargs[k] = self._get_input_parameter_value(k, v)
+            if v is task_final_status.PipelineTaskFinalStatus:
+                value = self._get_input_parameter_value(k, v)
+                func_kwargs[k] = task_final_status.PipelineTaskFinalStatus(
+                    state=value.get('state'),
+                    pipeline_job_resource_name=value.get(
+                        'pipelineJobResourceName'),
+                    # pipelineTaskName won't be None once the Vertex Pipelines
+                    # BE change is rolled out
+                    pipeline_task_name=value.get('pipelineTaskName', None),
+                    error_code=value.get('error').get('code', None),
+                    error_message=value.get('error').get('message', None),
+                )
+
+            elif self._is_parameter(v):
+                value = self._get_input_parameter_value(k, v)
+                if value is not None:
+                    func_kwargs[k] = value
 
             if type_annotations.is_artifact_annotation(v):
                 if type_annotations.is_input_artifact(v):

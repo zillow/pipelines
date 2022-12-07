@@ -12,39 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
-import logging
+import copy
+import datetime
 import json
+import logging
 import os
 import re
 import tarfile
 import tempfile
+import time
+from typing import Callable, Mapping, Optional
 import warnings
-import yaml
 import zipfile
-import datetime
-import copy
-from typing import Mapping, Callable, Optional
-
-import kfp_server_api
 
 from kfp import dsl
+from kfp._auth import get_auth_token
+from kfp._auth import get_gcp_access_token
 from kfp.compiler import compiler
 from kfp.compiler._k8s_helper import sanitize_k8s_name
-
-from kfp._auth import get_auth_token, get_gcp_access_token
+import kfp_server_api
 from kfp_server_api import ApiException
+import yaml
 
 # Operators on scalar values. Only applies to one of |int_value|,
 # |long_value|, |string_value| or |timestamp_value|.
 _FILTER_OPERATIONS = {
-    "UNKNOWN": 0,
-    "EQUALS": 1,
-    "NOT_EQUALS": 2,
-    "GREATER_THAN": 3,
-    "GREATER_THAN_EQUALS": 5,
-    "LESS_THAN": 6,
-    "LESS_THAN_EQUALS": 7
+    'UNKNOWN': 0,
+    'EQUALS': 1,
+    'NOT_EQUALS': 2,
+    'GREATER_THAN': 3,
+    'GREATER_THAN_EQUALS': 5,
+    'LESS_THAN': 6,
+    'LESS_THAN_EQUALS': 7
 }
 
 
@@ -101,10 +100,8 @@ class Client(object):
       host: The host name to use to talk to Kubeflow Pipelines. If not set, the in-cluster
           service DNS name will be used, which only works if the current environment is a pod
           in the same cluster (such as a Jupyter instance spawned by Kubeflow's
-          JupyterHub). If you have a different connection to cluster, such as a kubectl
-          proxy connection, then set it to something like "127.0.0.1:8080/pipeline.
-          If you connect to an IAP enabled cluster, set it to
-          https://<your-deployment>.endpoints.<your-project>.cloud.goog/pipeline".
+          JupyterHub).
+          Set the host based on https://www.kubeflow.org/docs/components/pipelines/sdk/connect-api/.
       client_id: The client ID used by Identity-Aware Proxy.
       namespace: The namespace where the kubeflow pipeline system is run.
       other_client_id: The client ID used to obtain the auth codes and refresh tokens.
@@ -168,6 +165,12 @@ class Client(object):
         # Save the loaded API client configuration, as a reference if update is
         # needed.
         self._load_context_setting_or_default()
+
+        # If custom namespace provided, overwrite the loaded or default one in
+        # context settings for current client instance
+        if namespace != 'kubeflow':
+            self._context_setting['namespace'] = namespace
+
         self._existing_config = config
         if cookies is None:
             cookies = self._context_setting.get('client_authentication_cookie')
@@ -255,8 +258,8 @@ class Client(object):
             token = existing_token
             self._is_refresh_token = False
         elif client_id:
-            token = get_auth_token(client_id, other_client_id,
-                                   other_client_secret)
+            token, self._is_refresh_token = get_auth_token(
+                client_id, other_client_id, other_client_secret)
             self._is_refresh_token = True
         elif self._is_inverse_proxy_host(host):
             token = get_gcp_access_token()
@@ -368,8 +371,8 @@ class Client(object):
         try:
             credentials.refresh_api_key_hook(config_copy)
         except Exception:
-            logging.warning("Failed to set up default credentials. Proceeding"
-                            " without credentials...")
+            logging.warning('Failed to set up default credentials. Proceeding'
+                            ' without credentials...')
             return config
 
         config.refresh_api_key_hook = credentials.refresh_api_key_hook
@@ -489,10 +492,10 @@ class Client(object):
           Returns the pipeline id if a pipeline with the name exists.
         """
         pipeline_filter = json.dumps({
-            "predicates": [{
-                "op": _FILTER_OPERATIONS["EQUALS"],
-                "key": "name",
-                "stringValue": name,
+            'predicates': [{
+                'op': _FILTER_OPERATIONS['EQUALS'],
+                'key': 'name',
+                'stringValue': name,
             }]
         })
         result = self._pipelines_api.list_pipelines(filter=pipeline_filter)
@@ -502,7 +505,7 @@ class Client(object):
             return result.pipelines[0].id
         elif len(result.pipelines) > 1:
             raise ValueError(
-                "Multiple pipelines with the name: {} found, the name needs to be unique"
+                'Multiple pipelines with the name: {} found, the name needs to be unique'
                 .format(name))
         return None
 
@@ -567,10 +570,10 @@ class Client(object):
         if experiment_id is not None:
             return self._experiment_api.get_experiment(id=experiment_id)
         experiment_filter = json.dumps({
-            "predicates": [{
-                "op": _FILTER_OPERATIONS["EQUALS"],
-                "key": "name",
-                "stringValue": experiment_name,
+            'predicates': [{
+                'op': _FILTER_OPERATIONS['EQUALS'],
+                'key': 'name',
+                'stringValue': experiment_name,
             }]
         })
         if namespace:
@@ -635,7 +638,7 @@ class Client(object):
                 )
 
         if package_file.endswith('.tar.gz') or package_file.endswith('.tgz'):
-            with tarfile.open(package_file, "r:gz") as tar:
+            with tarfile.open(package_file, 'r:gz') as tar:
                 file_names = [member.name for member in tar if member.isfile()]
                 pipeline_yaml_file = _choose_pipeline_yaml_file(file_names)
                 with tar.extractfile(tar.getmember(pipeline_yaml_file)) as f:
@@ -1320,7 +1323,8 @@ class Client(object):
         pipeline_name: Optional[str] = None,
         description: Optional[str] = None,
     ) -> kfp_server_api.ApiPipelineVersion:
-        """Uploads a new version of the pipeline to the Kubeflow Pipelines cluster.
+        """Uploads a new version of the pipeline to the Kubeflow Pipelines
+        cluster.
 
         Args:
           pipeline_package_path: Local path to the pipeline package.

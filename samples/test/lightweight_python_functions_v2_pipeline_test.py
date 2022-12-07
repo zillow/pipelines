@@ -18,7 +18,7 @@ import kfp_server_api
 import kfp.dsl as dsl
 
 from .lightweight_python_functions_v2_pipeline import pipeline
-from .util import run_pipeline_func, TestCase, KfpMlmdClient
+from kfp.samples.test.utils import run_pipeline_func, TestCase, KfpMlmdClient
 from ml_metadata.proto import Execution
 
 
@@ -39,10 +39,8 @@ def verify(run: kfp_server_api.ApiRun, mlmd_connection_config, **kwargs):
     t.assertEqual(
         {
             'inputs': {
-                'artifacts': [],
                 'parameters': {
                     'message': 'message',
-                    'empty_message': '',
                 }
             },
             'name': 'preprocess',
@@ -61,9 +59,12 @@ def verify(run: kfp_server_api.ApiRun, mlmd_connection_config, **kwargs):
                     'type': 'system.Dataset'
                 }],
                 'parameters': {
-                    'output_bool_parameter_path': 'True',
-                    'output_dict_parameter_path': '{"A": 1, "B": 2}',
-                    'output_list_parameter_path': '["a", "b", "c"]',
+                    'output_bool_parameter_path': True,
+                    'output_dict_parameter_path': {
+                        "A": 1,
+                        "B": 2
+                    },
+                    'output_list_parameter_path': ["a", "b", "c"],
                     'output_parameter_path': 'message'
                 }
             },
@@ -89,11 +90,13 @@ def verify(run: kfp_server_api.ApiRun, mlmd_connection_config, **kwargs):
                     'type': 'system.Dataset'
                 }],
                 'parameters': {
-                    'input_bool': 'True',
-                    'input_dict': '{"A": 1, "B": 2}',
-                    'input_list': '["a", "b", "c"]',
-                    'message': 'message',
-                    'num_steps': 100,
+                    'input_bool': True,
+                    'input_dict': {
+                        "A": 1.0,
+                        "B": 2.0,
+                    },
+                    'input_list': ["a", "b", "c"],
+                    'message': 'message'
                 }
             },
             'name': 'train',
@@ -106,7 +109,6 @@ def verify(run: kfp_server_api.ApiRun, mlmd_connection_config, **kwargs):
                     'name': 'model',
                     'type': 'system.Model'
                 }],
-                'parameters': {}
             },
             'type': 'system.ContainerExecution',
             'state': Execution.State.COMPLETE,
@@ -119,11 +121,5 @@ run_pipeline_func([
     TestCase(
         pipeline_func=pipeline,
         verify_func=verify,
-        mode=dsl.PipelineExecutionMode.V2_COMPATIBLE
-    ),
-    TestCase(
-        pipeline_func=pipeline,
-        verify_func=verify,
-        mode=dsl.PipelineExecutionMode.V2_ENGINE
-    ),
+        mode=dsl.PipelineExecutionMode.V2_ENGINE),
 ])

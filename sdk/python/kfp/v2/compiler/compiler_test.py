@@ -1,4 +1,4 @@
-# Copyright 2020 The Kubeflow Authors
+# Copyright 2020-2022 The Kubeflow Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,10 +18,15 @@ import shutil
 import tempfile
 import unittest
 
+from typing import List
+
 from kfp import components
+from kfp.dsl import types
 from kfp.v2 import compiler
 from kfp.v2 import dsl
-from kfp.dsl import types
+from kfp.v2.compiler import compiler_utils
+from kfp.v2.dsl import PipelineTaskFinalStatus
+import yaml
 
 VALID_PRODUCER_COMPONENT_SAMPLE = components.load_component_from_text("""
     name: producer
@@ -40,7 +45,7 @@ VALID_PRODUCER_COMPONENT_SAMPLE = components.load_component_from_text("""
     """)
 
 
-class CompilerTest(unittest.TestCase):
+class CompilerTest(parameterized.TestCase):
 
     def test_compile_simple_pipeline(self):
 
@@ -75,7 +80,7 @@ class CompilerTest(unittest.TestCase):
           - {inputValue: input_value}
       """)
 
-            @dsl.pipeline(name='test-pipeline', pipeline_root='dummy_root')
+            @dsl.pipeline(name='test-pipeline')
             def simple_pipeline(pipeline_input: str = 'Hello KFP!'):
                 producer = producer_op(input_param=pipeline_input)
                 consumer = consumer_op(
@@ -87,33 +92,51 @@ class CompilerTest(unittest.TestCase):
                 pipeline_func=simple_pipeline, package_path=target_json_file)
 
             self.assertTrue(os.path.exists(target_json_file))
+            with open(target_json_file, 'r') as f:
+                print(f.read())
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_compile_pipeline_with_bool(self):
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            predict_op = components.load_component_from_text("""
+      name: predict
+      inputs:
+      - {name: generate_explanation, type: Boolean, default: False}
+      implementation:
+        container:
+          image: gcr.io/my-project/my-image:tag
+          args:
+          - {inputValue: generate_explanation}
+      """)
+
+            @dsl.pipeline(name='test-boolean-pipeline')
+            def simple_pipeline():
+                predict_op(generate_explanation=True)
+
+            target_json_file = os.path.join(tmpdir, 'result.json')
+            compiler.Compiler().compile(
+                pipeline_func=simple_pipeline, package_path=target_json_file)
+
+            self.assertTrue(os.path.exists(target_json_file))
+            with open(target_json_file, 'r') as f:
+                print(f.read())
         finally:
             shutil.rmtree(tmpdir)
 
     def test_compile_pipeline_with_dsl_graph_component_should_raise_error(self):
 
         with self.assertRaisesRegex(
-                NotImplementedError,
-                'dsl.graph_component is not yet supported in KFP v2 compiler.'):
-
-            @dsl.component
-            def flip_coin_op() -> str:
-                import random
-                result = 'heads' if random.randint(0, 1) == 0 else 'tails'
-                return result
+                AttributeError,
+                "module 'kfp.v2.dsl' has no attribute 'graph_component'"):
 
             @dsl.graph_component
             def flip_coin_graph_component():
                 flip = flip_coin_op()
                 with dsl.Condition(flip.output == 'heads'):
                     flip_coin_graph_component()
-
-            @dsl.pipeline(name='test-pipeline', pipeline_root='dummy_root')
-            def my_pipeline():
-                flip_coin_graph_component()
-
-            compiler.Compiler().compile(
-                pipeline_func=my_pipeline, package_path='output.json')
 
     def test_compile_pipeline_with_misused_inputvalue_should_raise_error(self):
 
@@ -255,9 +278,8 @@ class CompilerTest(unittest.TestCase):
 
             self.assertTrue(os.path.exists(target_json_file))
             with open(target_json_file) as f:
-                job_spec = json.load(f)
-            self.assertEqual('gs://path',
-                             job_spec['runtimeConfig']['gcsOutputDirectory'])
+                pipeline_spec = json.load(f)
+            self.assertEqual('gs://path', pipeline_spec['defaultPipelineRoot'])
         finally:
             shutil.rmtree(tmpdir)
 
@@ -279,10 +301,10 @@ class CompilerTest(unittest.TestCase):
             component_op(some_input=input1)
 
         with self.assertRaisesRegex(
-                TypeError,
-                'Passing PipelineParam "input1" with type "String" \(as "Parameter"\) '
-                'to component input "some_input" with type "None" \(as "Artifact"\) is '
-                'incompatible. Please fix the type of the component input.'):
+                type_utils.InconsistentTypeException,
+                'Incompatible argument passed to the input "some_input" of '
+                'component "compoent": Argument type "STRING" is incompatible '
+                'with the input type "Artifact"'):
             compiler.Compiler().compile(
                 pipeline_func=my_pipeline, package_path='output.json')
 
@@ -294,12 +316,7 @@ class CompilerTest(unittest.TestCase):
             pass
 
         with self.assertRaisesRegex(
-                TypeError,
-                'The pipeline argument \"input1\" is viewed as an artifact due '
-                'to its type \"None\". And we currently do not support passing '
-                'artifacts as pipeline inputs. Consider type annotating the '
-                'argument with a primitive type, such as \"str\", \"int\", '
-                '\"float\", \"bool\", \"dict\", and \"list\".'):
+                TypeError, 'Missing type annotation for argument: input1'):
             compiler.Compiler().compile(
                 pipeline_func=my_pipeline, package_path='output.json')
 
@@ -324,24 +341,74 @@ class CompilerTest(unittest.TestCase):
         consumer_op1 = components.load_component_from_text("""
       name: consumer compoent
       inputs:
-      - {name: input, type: MyDataset}
+      - {name: input1, type: MyDataset}
       implementation:
         container:
           image: dummy
           args:
-          - {inputPath: input}
+          - {inputPath: input1}
       """)
 
         @dsl.component
-        def consumer_op2(input: dsl.Input[dsl.Dataset]):
+        def consumer_op2(input1: dsl.Input[dsl.Dataset]):
             pass
 
         @dsl.pipeline(name='test-pipeline')
         def my_pipeline():
-            consumer_op1(producer_op1().output)
-            consumer_op1(producer_op2().output)
-            consumer_op2(producer_op1().output)
-            consumer_op2(producer_op2().output)
+            consumer_op1(input1=producer_op1().output)
+            consumer_op1(input1=producer_op2().output)
+            consumer_op2(input1=producer_op1().output)
+            consumer_op2(input1=producer_op2().output)
+
+        try:
+            tmpdir = tempfile.mkdtemp()
+            target_json_file = os.path.join(tmpdir, 'result.json')
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path=target_json_file)
+
+            self.assertTrue(os.path.exists(target_json_file))
+        finally:
+            shutil.rmtree(tmpdir)
+
+    def test_passing_concrete_artifact_to_input_expecting_generic_artifact(
+            self):
+
+        producer_op1 = components.load_component_from_text("""
+      name: producer compoent
+      outputs:
+      - {name: output, type: Dataset}
+      implementation:
+        container:
+          image: dummy
+          args:
+          - {outputPath: output}
+      """)
+
+        @dsl.component
+        def producer_op2(output: dsl.Output[dsl.Model]):
+            pass
+
+        consumer_op1 = components.load_component_from_text("""
+      name: consumer compoent
+      inputs:
+      - {name: input1, type: Artifact}
+      implementation:
+        container:
+          image: dummy
+          args:
+          - {inputPath: input1}
+      """)
+
+        @dsl.component
+        def consumer_op2(input1: dsl.Input[dsl.Artifact]):
+            pass
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline():
+            consumer_op1(input1=producer_op1().output)
+            consumer_op1(input1=producer_op2().output)
+            consumer_op2(input1=producer_op1().output)
+            consumer_op2(input1=producer_op2().output)
 
         try:
             tmpdir = tempfile.mkdtemp()
@@ -418,38 +485,263 @@ class CompilerTest(unittest.TestCase):
       """)
 
         @dsl.component
-        def consumer_op(input: dsl.Input[dsl.Dataset]):
+        def consumer_op(input1: dsl.Input[dsl.Dataset]):
             pass
 
         @dsl.pipeline(name='test-pipeline')
         def my_pipeline():
-            consumer_op(producer_op1().output)
-            consumer_op(producer_op2().output)
+            consumer_op(input1=producer_op1().output)
+            consumer_op(input1=producer_op2().output)
 
         with self.assertRaisesRegex(
-                types.InconsistentTypeException,
-                'Incompatible argument passed to the input "input" of component '
-                '"Consumer op": Argument type "SomeArbitraryType" is incompatible with '
-                'the input type "Dataset"'):
+                type_utils.InconsistentTypeException,
+                'Incompatible argument passed to the input "input1" of component'
+                ' "Consumer op": Argument type "SomeArbitraryType" is'
+                ' incompatible with the input type "Dataset"'):
             compiler.Compiler().compile(
                 pipeline_func=my_pipeline, package_path='result.json')
 
-    def test_constructing_container_op_directly_should_error(self):
+    @parameterized.parameters(
+        {
+            'pipeline_name': 'my-pipeline',
+            'is_valid': True,
+        },
+        {
+            'pipeline_name': 'p' * 128,
+            'is_valid': True,
+        },
+        {
+            'pipeline_name': 'p' * 129,
+            'is_valid': False,
+        },
+        {
+            'pipeline_name': 'my_pipeline',
+            'is_valid': False,
+        },
+        {
+            'pipeline_name': '-my-pipeline',
+            'is_valid': False,
+        },
+        {
+            'pipeline_name': 'My pipeline',
+            'is_valid': False,
+        },
+    )
+    def test_validate_pipeline_name(self, pipeline_name, is_valid):
+
+        if is_valid:
+            compiler.Compiler()._validate_pipeline_name(pipeline_name)
+        else:
+            with self.assertRaisesRegex(ValueError, 'Invalid pipeline name: '):
+                compiler.Compiler()._validate_pipeline_name('my_pipeline')
+
+    def test_invalid_after_dependency(self):
+
+        @dsl.component
+        def producer_op() -> str:
+            return 'a'
+
+        @dsl.component
+        def dummy_op(msg: str = ''):
+            pass
 
         @dsl.pipeline(name='test-pipeline')
-        def my_pipeline():
-            dsl.ContainerOp(
-                name='comp1',
-                image='gcr.io/dummy',
-                command=['python', 'main.py'])
+        def my_pipeline(text: str):
+            with dsl.Condition(text == 'a'):
+                producer_task = producer_op()
+
+            dummy_op().after(producer_task)
 
         with self.assertRaisesRegex(
                 RuntimeError,
-                'Constructing ContainerOp instances directly is deprecated and not '
-                'supported when compiling to v2 \(using v2 compiler or v1 compiler '
-                'with V2_COMPATIBLE or V2_ENGINE mode\).'):
+                'Task dummy-op cannot dependent on any task inside the group:'):
             compiler.Compiler().compile(
                 pipeline_func=my_pipeline, package_path='result.json')
+
+    def test_invalid_data_dependency(self):
+
+        @dsl.component
+        def producer_op() -> str:
+            return 'a'
+
+        @dsl.component
+        def dummy_op(msg: str = ''):
+            pass
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(text: bool):
+            with dsl.ParallelFor(['a, b']):
+                producer_task = producer_op()
+
+            dummy_op(msg=producer_task.output)
+
+        with self.assertRaisesRegex(
+                RuntimeError,
+                'Task dummy-op cannot dependent on any task inside the group:'):
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path='result.json')
+
+    def test_use_task_final_status_in_non_exit_op(self):
+
+        @dsl.component
+        def print_op(status: PipelineTaskFinalStatus):
+            return status
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline():
+            print_op()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                'PipelineTaskFinalStatus can only be used in an exit task.'):
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path='result.json')
+
+    def test_use_task_final_status_in_non_exit_op_yaml(self):
+
+        print_op = components.load_component_from_text("""
+name: Print Op
+inputs:
+- {name: message, type: PipelineTaskFinalStatus}
+implementation:
+  container:
+    image: python:3.7
+    command:
+    - echo
+    - {inputValue: message}
+""")
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline():
+            print_op()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                'PipelineTaskFinalStatus can only be used in an exit task.'):
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path='result.json')
+
+    def test_set_retry(self):
+
+        @dsl.component
+        def add(a: float, b: float) -> float:
+            return a + b
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(a: float = 1, b: float = 7):
+            add_task = add(a, b)
+            add_task.set_retry(
+                num_retries=3,
+                backoff_duration='30s',
+                backoff_factor=1.0,
+                backoff_max_duration='3h',
+            )
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path=package_path)
+            with open(package_path, 'r') as f:
+                pipeline_spec_dict = yaml.safe_load(f)
+
+        retry_policy = pipeline_spec_dict['pipelineSpec']['root']['dag'][
+            'tasks']['add']['retryPolicy']
+        self.assertEqual(retry_policy['maxRetryCount'], 3.0)
+        self.assertEqual(retry_policy['backoffDuration'], '30s')
+        self.assertEqual(retry_policy['backoffFactor'], 1.0)
+
+        # tests backoff max duration cap of 1 hour
+        self.assertEqual(retry_policy['backoffMaxDuration'], '3600s')
+
+    def test_retry_policy_throws_warning(self):
+
+        @dsl.component
+        def add(a: float, b: float) -> float:
+            return a + b
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(a: float = 1, b: float = 7):
+            add_task = add(a, b)
+            add_task.set_retry(num_retries=3, policy='Always')
+
+        with tempfile.TemporaryDirectory() as tempdir, self.assertWarnsRegex(
+                compiler_utils.NoOpWarning,
+                "'retry_policy' is ignored when compiling to IR using the v2 compiler"
+        ):
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path=package_path)
+
+    def test_parallel_for_parallelism(self):
+
+        @dsl.component
+        def print_op(msg: str):
+            print(msg)
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(loop_params: List[str] = ['hello', 'world']):
+            with dsl.ParallelFor(loop_args=loop_params, parallelism=5) as item:
+                print_op(item)
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path=package_path)
+            with open(package_path, 'r') as f:
+                pipeline_spec_dict = yaml.safe_load(f)
+
+        iterator_policy = pipeline_spec_dict['pipelineSpec']['root']['dag'][
+            'tasks']['for-loop-1']['iteratorPolicy']
+        self.assertEqual(iterator_policy['parallelismLimit'], 5)
+
+    def test_parallel_for_invalid_parallelism(self):
+
+        @dsl.component
+        def print_op(msg: str):
+            print(msg)
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(loop_params: List[str] = ['hello', 'world']):
+            with dsl.ParallelFor(loop_args=loop_params, parallelism=-5) as item:
+                print_op(item)
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            with self.assertRaisesRegex(
+                    ValueError, 'ParallelFor parallelism must be >= 0.'):
+                compiler.Compiler().compile(
+                    pipeline_func=my_pipeline, package_path=package_path)
+
+    def test_parallel_for_no_parallelism(self):
+
+        @dsl.component
+        def print_op(msg: str):
+            print(msg)
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(loop_params: List[str] = ['hello', 'world']):
+            with dsl.ParallelFor(loop_args=loop_params) as item:
+                print_op(item)
+
+            with dsl.ParallelFor(loop_args=loop_params, parallelism=0) as item:
+                print_op(item)
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path=package_path)
+            with open(package_path, 'r') as f:
+                pipeline_spec_dict = yaml.safe_load(f)
+
+        for_loop_1 = pipeline_spec_dict['pipelineSpec']['root']['dag']['tasks'][
+            'for-loop-1']
+        with self.assertRaises(KeyError):
+            for_loop_1['iteratorPolicy']
+
+        for_loop_2 = pipeline_spec_dict['pipelineSpec']['root']['dag']['tasks'][
+            'for-loop-2']
+        with self.assertRaises(KeyError):
+            for_loop_2['iteratorPolicy']
 
 
 if __name__ == '__main__':

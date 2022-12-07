@@ -17,17 +17,17 @@ SHELL = /bin/bash
 
 # create an .env file to override dev vars locally
 -include .env
-LAUNCHER_IMAGE?=gcr.io/ml-pipeline/kfp-launcher
 DEV_IMAGE_PREFIX?=gcr.io/ml-pipeline-test/dev/kfp-
 REPO_ROOT=..
-# override this via env to increase verbosity of go-licenses, example:
-# GO_LICENSES_FLAGS=-v4 make license-launcher
 GOOS_VALUE?=linux
 GOARCH_VALUE?=amd64
+# override this via env to increase verbosity of go-licenses, example:
+# GO_LICENSES_FLAGS=-v4 make license-launcher
 GO_LICENSES_FLAGS?=
 GO_FLAGS=GO111MODULE=on CGO_ENABLED=0 GOOS=${GOOS_VALUE} GOARCH=${GOARCH_VALUE}
 GO_BUILD_FLAGS=-tags netgo -ldflags '-extldflags "-static"'
 KO_VERSION?=v0.8.3
+MLMD_VERSION=$$(cat ../third_party/ml-metadata/VERSION)
 
 ###### Common targets ######
 
@@ -35,6 +35,11 @@ KO_VERSION?=v0.8.3
 .PHONY: test
 test: mlmd # a MLMD server running in background is required by some tests
 	go test ./...
+
+.PHONY: test-update
+test-update: mlmd
+	# Updating compiled argo YAML golden files...
+	go test ./compiler/argocompiler --args --update
 
 # make test-watch watches file system changes and rerun go unit tests automatically
 # install inotifywait by:
@@ -45,36 +50,28 @@ test-watch: mlmd
 		go test ./...; \
 	done
 
-###### KFP v2 compatible targets ######
-
-image-launcher:
-	@docker build -t ${LAUNCHER_IMAGE} -f container/launcher/Dockerfile ..
-push-launcher: image-launcher
-	@docker push ${LAUNCHER_IMAGE}
-
-license-launcher: third_party/licenses/launcher.csv
-third_party/licenses/launcher.csv: build/launcher go-licenses.yaml
-	go-licenses $(GO_LICENSES_FLAGS) csv build/launcher > third_party/licenses/launcher.csv
-
-# Write out all possible targets for build/% image-%-dev rules
-# for shell autocomplete.
-build/launcher:
-image-launcher-dev:
-
 ###### KFP v2 targets ######
 
 # make dev runs developing actions from end to end for KFP v2.
 # Build images, push them to dev image registry, build backend compiler, compile pipelines and run them.
 .PHONY: dev
-dev: image-dev build/compiler \
-	pipeline/v2/hello_world \
+dev: pipeline/v2/hello_world \
 	pipeline/v2/producer_consumer_param \
-	pipeline/test/two_step \
-	pipeline/test/lightweight_python_functions_v2_pipeline
+	pipeline/test/lightweight_python_functions_v2_pipeline \
+	pipeline/test/lightweight_python_functions_v2_with_outputs
+# pipeline/core/condition/condition_v2:
+# pipeline/core/loop_output/loop_output_v2:
+# pipeline/core/loop_static/loop_static_v2:
+# pipeline/core/loop_parameter/loop_parameter_v2:
+# pipeline/core/resource_spec/resource_spec_v2:
+# TODO(v2): migrate v1 samples to v2.
+# pipeline/test/two_step \
+# pipeline/test/lightweight_python_functions_v2_pipeline
+# pipeline/v2/producer_consumer_param \
 
 .PHONY: build image-dev
-build: build/launcher build/compiler build/driver
-image-dev: image-launcher-v2-dev image-driver-dev image-launcher-dev
+build: build/compiler build/driver
+image-dev: image-launcher-v2-dev image-driver-dev
 
 # Install v2 backend compiler to ~/bin.
 # Please add ~/bin to your $PATH first.
@@ -103,21 +100,27 @@ pipeline/v2/pipeline_with_importer:
 pipeline/test/two_step:
 pipeline/test/lightweight_python_functions_v2_pipeline:
 pipeline/test/lightweight_python_functions_v2_with_outputs:
+pipeline/core/loop_output/loop_output_v2:
+pipeline/core/loop_static/loop_static_v2:
+pipeline/core/loop_parameter/loop_parameter_v2:
+pipeline/core/resource_spec/resource_spec_v2:
+pipeline/core/condition/condition_v2:
+pipeline/core/condition/condition_v2_simple:
 
 # Run a test pipeline using v2 CLI compiler (v2 engine mode).
 .PHONY: pipeline/%
-pipeline/%:
+pipeline/%: build/compiler image-dev
 	tmp="$$(mktemp -d)" \
 	&& mkdir -p "$$(dirname $${tmp}/$*)" \
-	&& dsl-compile-v2 --py $(REPO_ROOT)/samples/$*.py --out "$${tmp}/$*.json" \
-	&& build/compiler --spec "$${tmp}/$*.json" --driver "$(DEV_IMAGE_PREFIX)driver:latest" --launcher "$(DEV_IMAGE_PREFIX)launcher-v2:latest" > "$${tmp}/$*.yaml" \
-	&& if which argo >/dev/null; then argo lint "$${tmp}/$*.yaml"; else echo "argo CLI not found, skip linting"; fi \
-	&& kfp run submit -f "$${tmp}/$*.yaml" -e default -r "$*_$${RANDOM}"
+	&& echo "SDK Compiling to $${tmp}/$*.json" && dsl-compile-v2 --py $(REPO_ROOT)/samples/$*.py --out "$${tmp}/$*.json" \
+	&& echo "Backend Compiler compiling to $${tmp}/$*.yaml" && build/compiler --spec "$${tmp}/$*.json" --driver "$(DEV_IMAGE_PREFIX)driver:latest" --launcher "$(DEV_IMAGE_PREFIX)launcher-v2:latest" > "$${tmp}/$*.yaml" \
+	&& echo "Linting..." && if which argo >/dev/null; then argo lint "$${tmp}/$*.yaml"; else echo "argo CLI not found, skip linting"; fi \
+	&& echo "Running the pipeline..." && kfp run submit -f "$${tmp}/$*.yaml" -e default -r "$*_$${RANDOM}"
 
 ###### Common target implementation details ######
 
 # always rebuild, it's hard to set up exact dependencies
-# For build/launcher, $@ will be build/launcher, $* will be launcher.
+# For build/launcher-v2, $@ will be build/launcher-v2, $* will be launcher-v2.
 build/%: FORCE
 	$(GO_FLAGS) go build $(GO_BUILD_FLAGS) -o $@ github.com/kubeflow/pipelines/v2/cmd/$*
 image-%-dev: FORCE
@@ -136,7 +139,7 @@ mlmd:
 		-p 8080:8080 \
 		--env MLMD_CONFIG=connection_config{sqlite{filename_uri:\"file:///mlmd.db\"}} \
 		--entrypoint /bin/bash \
-		gcr.io/tfx-oss-public/ml_metadata_store_server:1.2.0 \
+		"gcr.io/tfx-oss-public/ml_metadata_store_server:${MLMD_VERSION}" \
 		-exc 'echo "$${MLMD_CONFIG}" > config && /bin/metadata_store_server -metadata_store_server_config_file config' \
 		&& echo "MLMD container starts to run."; \
 		fi
