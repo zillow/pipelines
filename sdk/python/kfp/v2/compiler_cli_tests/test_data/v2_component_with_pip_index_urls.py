@@ -1,4 +1,4 @@
-# Copyright 2018 The Kubeflow Authors
+# Copyright 2022 The Kubeflow Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,17 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# `kfp` is a namespace package.
-# https://packaging.python.org/guides/packaging-namespace-packages/#pkgutil-style-namespace-packages
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
+from kfp.v2 import compiler
+from kfp.v2 import dsl
+from kfp.v2.dsl import component
 
-__version__ = '1.8.16'
 
-from . import components
-from . import containers
-from . import dsl
-from . import auth
-from ._client import Client
-from ._config import *
-from ._local_client import LocalClient
-from ._runners import *
+@component(
+    pip_index_urls=['https://pypi.org/simple'], packages_to_install=['yapf'])
+def component_op():
+    import yapf
+    print(dir(yapf))
+
+
+@dsl.pipeline(name='v2-component-pip-index-urls')
+def pipeline():
+    component_op()
+
+
+if __name__ == '__main__':
+    compiler.Compiler().compile(
+        pipeline_func=pipeline, package_path=__file__.replace('.py', '.json'))

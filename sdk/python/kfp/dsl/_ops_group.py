@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Union
+
+from typing import Optional, Union
 import uuid
 
 from kfp.dsl import _for_loop, _pipeline_param
@@ -144,8 +145,16 @@ class ExitHandler(OpsGroup):
           op2 = ContainerOp(...)
     """
 
-    def __init__(self, exit_op: _container_op.ContainerOp):
+    def __init__(
+        self,
+        exit_op: _container_op.ContainerOp,
+        name: Optional[str] = None,
+    ):
         super(ExitHandler, self).__init__('exit_handler')
+
+        # Use user specified name as display name directly, instead of passing
+        # it to the super class constructor.
+        self.display_name = name
         if exit_op.dependent_names:
             raise ValueError('exit_op cannot depend on any other ops.')
 
@@ -208,10 +217,11 @@ class ParallelFor(OpsGroup):
     def __init__(self,
                  loop_args: Union[_for_loop.ItemList,
                                   _pipeline_param.PipelineParam],
-                 parallelism: int = None):
-        if parallelism and parallelism < 1:
+                 parallelism: Optional[int] = None):
+        parallelism = parallelism or 0
+        if parallelism < 0:
             raise ValueError(
-                'ParallelFor parallism set to < 1, allowed values are > 0')
+                f'ParallelFor parallelism must be >= 0. Got: {parallelism}.')
 
         self.items_is_pipeline_param = isinstance(loop_args,
                                                   _pipeline_param.PipelineParam)

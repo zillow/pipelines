@@ -40,6 +40,7 @@ _PARAMETER_TYPES = [
             'data_type': 'proto:tfx.components.trainer.TrainArgs'
         }
     },
+    'PipelineTaskFinalStatus',
 ]
 _KNOWN_ARTIFACT_TYPES = ['Model', 'Dataset', 'Schema', 'Metrics']
 _UNKNOWN_ARTIFACT_TYPES = [None, 'Arbtrary Model', 'dummy']
@@ -385,42 +386,21 @@ class TypeUtilsTest(parameterized.TestCase):
 
     @parameterized.parameters(
         {
-            'given_type': str,
-            'expected_type_name': 'String',
+            'given_type': 'PipelineTaskFinalStatus',
+            'expected_result': True,
+        },
+        {
+            'given_type': 'pipelineTaskFinalstatus',
+            'expected_result': False,
         },
         {
             'given_type': int,
-            'expected_type_name': 'Integer',
-        },
-        {
-            'given_type': float,
-            'expected_type_name': 'Float',
-        },
-        {
-            'given_type': bool,
-            'expected_type_name': 'Boolean',
-        },
-        {
-            'given_type': list,
-            'expected_type_name': 'List',
-        },
-        {
-            'given_type': dict,
-            'expected_type_name': 'Dict',
-        },
-        {
-            'given_type': Any,
-            'expected_type_name': None,
+            'expected_result': False,
         },
     )
-    def test_get_canonical_type_name_for_type(
-        self,
-        given_type,
-        expected_type_name,
-    ):
-        self.assertEqual(
-            expected_type_name,
-            type_utils.get_canonical_type_name_for_type(given_type))
+    def test_is_task_final_statu_type(self, given_type, expected_result):
+        self.assertEqual(expected_result,
+                         type_utils.is_task_final_status_type(given_type))
 
 
 if __name__ == '__main__':

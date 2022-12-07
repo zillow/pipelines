@@ -1,4 +1,4 @@
-# Copyright 2021 The Kubeflow Authors
+# Copyright 2020-2022 The Kubeflow Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,13 +32,8 @@ from kfp.v2 import dsl
 from kfp.v2.compiler import pipeline_spec_builder as builder
 from kfp.v2.components import utils as component_utils
 from kfp.v2.components import component_factory
-from kfp.v2.components import for_loop
-from kfp.v2.components import pipeline_channel
-from kfp.v2.components import pipeline_context
-from kfp.v2.components import pipeline_task
-from kfp.v2.components import tasks_group
-from kfp.v2.components.types import artifact_types
-from kfp.v2.components.types import type_utils
+from kfp.v2.components import task_final_status
+from kfp.v2.components.types import artifact_types, type_utils
 
 _GroupOrTask = Union[tasks_group.TasksGroup, pipeline_task.PipelineTask]
 
@@ -879,6 +874,69 @@ class Compiler:
         # Generate task specs and component specs for the dag.
         subgroups = group.groups + group.tasks
         for subgroup in subgroups:
+            subgroup_task_spec = getattr(subgroup, 'task_spec',
+                                         pipeline_spec_pb2.PipelineTaskSpec())
+            subgroup_component_spec = getattr(subgroup, 'component_spec',
+                                              pipeline_spec_pb2.ComponentSpec())
+
+            display_name = getattr(subgroup, 'display_name', None)
+            subgroup_task_spec.task_info.name = display_name or subgroup.name
+
+            is_recursive_subgroup = (
+                isinstance(subgroup, dsl.OpsGroup) and subgroup.recursive_ref)
+            if is_recursive_subgroup:
+                raise NotImplementedError(
+                    'Recursive subgroup is not supported in v2 yet.')
+            else:
+                subgroup_key = subgroup.name
+
+            # human_name exists for ops only, and is used to de-dupe component spec.
+            subgroup_component_name = (
+                subgroup_task_spec.component_ref.name or
+                dsl_utils.sanitize_component_name(
+                    getattr(subgroup, 'human_name', subgroup_key)))
+            subgroup_task_spec.component_ref.name = subgroup_component_name
+
+            if isinstance(subgroup, dsl.OpsGroup) and subgroup.type == 'graph':
+                raise NotImplementedError(
+                    'dsl.graph_component is not yet supported in KFP v2 compiler.'
+                )
+
+            if isinstance(subgroup, dsl.ContainerOp):
+                if hasattr(subgroup, 'importer_spec'):
+                    importer_comp_name = subgroup.task_spec.component_ref.name
+                    importer_exec_label = subgroup.component_spec.executor_label
+                    group_component_spec.dag.tasks[subgroup.name].CopyFrom(
+                        subgroup.task_spec)
+                    pipeline_spec.components[importer_comp_name].CopyFrom(
+                        subgroup.component_spec)
+                    deployment_config.executors[
+                        importer_exec_label].importer.CopyFrom(
+                            subgroup.importer_spec)
+                else:
+                    for input_spec in subgroup._metadata.inputs or []:
+                        if type_utils.is_task_final_status_type(
+                                input_spec.type):
+                            raise ValueError(
+                                f'{task_final_status.PipelineTaskFinalStatus.__name__}'
+                                ' can only be used in an exit task.')
+
+                # Task level caching option.
+                subgroup.task_spec.caching_options.enable_cache = subgroup.enable_caching
+                if subgroup.num_retries or subgroup.backoff_duration or subgroup.backoff_factor or subgroup.backoff_max_duration:
+
+                    if subgroup.retry_policy is not None:
+                        warnings.warn(
+                            "'retry_policy' is ignored when compiling to IR using the v2 compiler.",
+                            compiler_utils.NoOpWarning)
+
+                    retry_policy_proto = compiler_utils.make_retry_policy_proto(
+                        max_retry_count=subgroup.num_retries,
+                        backoff_duration=subgroup.backoff_duration,
+                        backoff_factor=subgroup.backoff_factor,
+                        backoff_max_duration=subgroup.backoff_max_duration,
+                    )
+                    subgroup.task_spec.retry_policy.CopyFrom(retry_policy_proto)
 
             subgroup_inputs = inputs.get(subgroup.name, [])
             subgroup_channels = [channel for channel, _ in subgroup_inputs]
@@ -913,28 +971,7 @@ class Compiler:
                 )
                 task_name_to_task_spec[subgroup.name] = subgroup_task_spec
 
-                subgroup_component_spec = builder.build_component_spec_for_task(
-                    task=subgroup)
-                task_name_to_component_spec[
-                    subgroup.name] = subgroup_component_spec
-
-                executor_label = subgroup_component_spec.executor_label
-
-                if executor_label not in deployment_config.executors:
-                    if subgroup.container_spec is not None:
-                        subgroup_container_spec = builder.build_container_spec_for_task(
-                            task=subgroup)
-                        deployment_config.executors[
-                            executor_label].container.CopyFrom(
-                                subgroup_container_spec)
-                    elif subgroup.importer_spec is not None:
-                        subgroup_importer_spec = builder.build_importer_spec_for_task(
-                            task=subgroup)
-                        deployment_config.executors[
-                            executor_label].importer.CopyFrom(
-                                subgroup_importer_spec)
-            elif isinstance(subgroup, dsl.ParallelFor):
-
+            if isinstance(subgroup, dsl.ParallelFor):
                 # "Punch the hole", adding additional inputs (other than loop
                 # arguments which will be handled separately) needed by its
                 # subgroups or tasks.
@@ -981,12 +1018,48 @@ class Compiler:
 
             elif isinstance(subgroup, dsl.Condition):
 
-                # "Punch the hole", adding inputs needed by its subgroups or
-                # tasks.
-                condition_subgroup_channels = list(subgroup_channels)
-                for operand in [
-                        subgroup.condition.left_operand,
-                        subgroup.condition.right_operand,
+                    # If the loop arguments itself is a loop arguments variable, handle
+                    # the subvar name.
+                    loop_args_name, subvar_name = (
+                        dsl_component_spec._exclude_loop_arguments_variables(
+                            subgroup.loop_args.items_or_pipeline_param))
+                    if subvar_name:
+                        subgroup_task_spec.inputs.parameters[
+                            input_parameter_name].parameter_expression_selector = (
+                                'parseJson(string_value)["{}"]'.format(
+                                    subvar_name))
+                        subgroup_task_spec.inputs.parameters[
+                            input_parameter_name].component_input_parameter = (
+                                dsl_component_spec
+                                .additional_input_name_for_pipelineparam(
+                                    loop_args_name))
+
+                else:
+                    input_parameter_name = (
+                        dsl_component_spec
+                        .additional_input_name_for_pipelineparam(
+                            subgroup.loop_args.full_name))
+                    raw_values = subgroup.loop_args.to_list_for_task_yaml()
+
+                    dsl_component_spec.pop_input_from_task_spec(
+                        task_spec=subgroup_task_spec,
+                        input_name=input_parameter_name)
+
+                    subgroup_task_spec.parameter_iterator.items.raw = json.dumps(
+                        raw_values, sort_keys=True)
+                    subgroup_task_spec.parameter_iterator.item_input = (
+                        input_parameter_name)
+                if subgroup.parallelism > 0:
+                    subgroup_task_spec.iterator_policy.parallelism_limit = (
+                        subgroup.parallelism)
+
+            if isinstance(subgroup, dsl.Condition):
+
+                # "punch the hole", adding inputs needed by its subgroup or tasks.
+                condition_params = list(subgroup_params)
+                for param in [
+                        subgroup.condition.operand1,
+                        subgroup.condition.operand2,
                 ]:
                     if isinstance(operand, dsl.PipelineChannel):
                         condition_subgroup_channels.append(operand)
@@ -1051,3 +1124,350 @@ class Compiler:
             task_name_to_component_spec=task_name_to_component_spec,
             pipeline_spec=pipeline_spec,
         )
+
+    def _create_pipeline_spec(
+        self,
+        args: List[dsl.PipelineParam],
+        pipeline: dsl.Pipeline,
+    ) -> pipeline_spec_pb2.PipelineSpec:
+        """Creates the pipeline spec object.
+
+        Args:
+          args: The list of pipeline arguments.
+          pipeline: The instantiated pipeline object.
+
+        Returns:
+          A PipelineSpec proto representing the compiled pipeline.
+
+        Raises:
+          NotImplementedError if the argument is of unsupported types.
+        """
+        compiler_utils.validate_pipeline_name(pipeline.name)
+
+        deployment_config = pipeline_spec_pb2.PipelineDeploymentConfig()
+        pipeline_spec = pipeline_spec_pb2.PipelineSpec()
+
+        pipeline_spec.pipeline_info.name = pipeline.name
+        pipeline_spec.sdk_version = 'kfp-{}'.format(kfp.__version__)
+        # Schema version 2.0.0 is required for kfp-pipeline-spec>0.1.3.1
+        pipeline_spec.schema_version = '2.0.0'
+
+        dsl_component_spec.build_component_inputs_spec(
+            component_spec=pipeline_spec.root,
+            pipeline_params=args,
+            is_root_component=True)
+
+        root_group = pipeline.groups[0]
+        opsgroups = self._get_groups(root_group)
+        op_name_to_parent_groups = self._get_groups_for_ops(root_group)
+        opgroup_name_to_parent_groups = self._get_groups_for_opsgroups(
+            root_group)
+
+        condition_params = self._get_condition_params_for_ops(root_group)
+        op_name_to_for_loop_op = self._get_for_loop_ops(root_group)
+
+        inputs, _ = self._get_inputs_outputs(
+            pipeline=pipeline,
+            args=args,
+            root_group=root_group,
+            op_groups=op_name_to_parent_groups,
+            opsgroup_groups=opgroup_name_to_parent_groups,
+            condition_params=condition_params,
+            op_name_to_for_loop_op=op_name_to_for_loop_op,
+        )
+
+        dependencies = self._get_dependencies(
+            pipeline=pipeline,
+            root_group=root_group,
+            op_groups=op_name_to_parent_groups,
+            opsgroups_groups=opgroup_name_to_parent_groups,
+            opsgroups=opsgroups,
+            condition_params=condition_params,
+        )
+
+        for opsgroup_name in opsgroups.keys():
+            self._group_to_dag_spec(
+                group=opsgroups[opsgroup_name],
+                inputs=inputs,
+                dependencies=dependencies,
+                pipeline_spec=pipeline_spec,
+                deployment_config=deployment_config,
+                rootgroup_name=root_group.name,
+                op_to_parent_groups=op_name_to_parent_groups,
+                opgroup_to_parent_groups=opgroup_name_to_parent_groups,
+                op_name_to_for_loop_op=op_name_to_for_loop_op,
+            )
+
+        # Exit Handler
+        if pipeline.groups[0].groups:
+            first_group = pipeline.groups[0].groups[0]
+            if first_group.type == 'exit_handler':
+                exit_handler_op = first_group.exit_op
+
+                # Add exit op task spec
+                task_name = exit_handler_op.name
+                display_name = exit_handler_op.display_name
+
+                exit_handler_op.task_spec.task_info.name = (
+                    display_name or task_name)
+                for input_spec in exit_handler_op._metadata.inputs or []:
+                    if type_utils.is_task_final_status_type(input_spec.type):
+                        exit_handler_op.task_spec.inputs.parameters[
+                            input_spec.name].task_final_status.producer_task = (
+                                first_group.name)
+
+                exit_handler_op.task_spec.dependent_tasks.extend(
+                    pipeline_spec.root.dag.tasks.keys())
+                exit_handler_op.task_spec.trigger_policy.strategy = (
+                    pipeline_spec_pb2.PipelineTaskSpec.TriggerPolicy
+                    .TriggerStrategy.ALL_UPSTREAM_TASKS_COMPLETED)
+                pipeline_spec.root.dag.tasks[task_name].CopyFrom(
+                    exit_handler_op.task_spec)
+
+                # Add exit op component spec if it does not exist.
+                component_name = exit_handler_op.task_spec.component_ref.name
+                if component_name not in pipeline_spec.components:
+                    pipeline_spec.components[component_name].CopyFrom(
+                        exit_handler_op.component_spec)
+
+                # Add exit op executor spec if it does not exist.
+                executor_label = exit_handler_op.component_spec.executor_label
+                if executor_label not in deployment_config.executors:
+                    deployment_config.executors[
+                        executor_label].container.CopyFrom(
+                            exit_handler_op.container_spec)
+                    pipeline_spec.deployment_spec.update(
+                        json_format.MessageToDict(deployment_config))
+
+        return pipeline_spec
+
+    def _validate_exit_handler(self, pipeline):
+        """Makes sure there is only one global exit handler.
+
+        This is temporary to be compatible with KFP v1.
+        """
+
+        def _validate_exit_handler_helper(group, exiting_op_names,
+                                          handler_exists):
+            if group.type == 'exit_handler':
+                if handler_exists or len(exiting_op_names) > 1:
+                    raise ValueError(
+                        'Only one global exit_handler is allowed and all ops need to be included.'
+                    )
+                handler_exists = True
+
+            if group.ops:
+                exiting_op_names.extend([x.name for x in group.ops])
+
+            for g in group.groups:
+                _validate_exit_handler_helper(g, exiting_op_names,
+                                              handler_exists)
+
+        return _validate_exit_handler_helper(pipeline.groups[0], [], False)
+
+    # TODO: Sanitizing beforehand, so that we don't need to sanitize here.
+    def _sanitize_and_inject_artifact(self, pipeline: dsl.Pipeline) -> None:
+        """Sanitize operator/param names and inject pipeline artifact
+        location."""
+
+        # Sanitize operator names and param names
+        sanitized_ops = {}
+
+        for op in pipeline.ops.values():
+            sanitized_name = sanitize_k8s_name(op.name)
+            op.name = sanitized_name
+            for param in op.outputs.values():
+                param.name = sanitize_k8s_name(param.name, True)
+                if param.op_name:
+                    param.op_name = sanitize_k8s_name(param.op_name)
+            if op.output is not None and not isinstance(
+                    op.output, dsl._container_op._MultipleOutputsError):
+                op.output.name = sanitize_k8s_name(op.output.name, True)
+                op.output.op_name = sanitize_k8s_name(op.output.op_name)
+            if op.dependent_names:
+                op.dependent_names = [
+                    sanitize_k8s_name(name) for name in op.dependent_names
+                ]
+            if isinstance(op, dsl.ContainerOp) and op.file_outputs is not None:
+                sanitized_file_outputs = {}
+                for key in op.file_outputs.keys():
+                    sanitized_file_outputs[sanitize_k8s_name(
+                        key, True)] = op.file_outputs[key]
+                op.file_outputs = sanitized_file_outputs
+            elif isinstance(
+                    op, dsl.ResourceOp) and op.attribute_outputs is not None:
+                sanitized_attribute_outputs = {}
+                for key in op.attribute_outputs.keys():
+                    sanitized_attribute_outputs[sanitize_k8s_name(key, True)] = \
+                      op.attribute_outputs[key]
+                op.attribute_outputs = sanitized_attribute_outputs
+            if isinstance(op, dsl.ContainerOp):
+                if op.input_artifact_paths:
+                    op.input_artifact_paths = {
+                        sanitize_k8s_name(key, True): value
+                        for key, value in op.input_artifact_paths.items()
+                    }
+                if op.artifact_arguments:
+                    op.artifact_arguments = {
+                        sanitize_k8s_name(key, True): value
+                        for key, value in op.artifact_arguments.items()
+                    }
+            sanitized_ops[sanitized_name] = op
+        pipeline.ops = sanitized_ops
+
+    def _create_pipeline_v2(
+        self,
+        pipeline_func: Callable[..., Any],
+        pipeline_name: Optional[str] = None,
+        pipeline_parameters_override: Optional[Mapping[str, Any]] = None,
+    ) -> pipeline_spec_pb2.PipelineJob:
+        """Creates a pipeline instance and constructs the pipeline spec from
+        it.
+
+        Args:
+          pipeline_func: Pipeline function with @dsl.pipeline decorator.
+          pipeline_name: The name of the pipeline. Optional.
+          pipeline_parameters_override: The mapping from parameter names to values.
+            Optional.
+
+        Returns:
+          A PipelineJob proto representing the compiled pipeline.
+        """
+
+        # Create the arg list with no default values and call pipeline function.
+        # Assign type information to the PipelineParam
+        pipeline_meta = component_factory.extract_component_interface(
+            pipeline_func)
+        pipeline_name = pipeline_name or pipeline_meta.name
+
+        pipeline_root = getattr(pipeline_func, 'pipeline_root', None)
+
+        args_list = []
+        signature = inspect.signature(pipeline_func)
+        for arg_name in signature.parameters:
+            arg_type = None
+            for pipeline_input in pipeline_meta.inputs or []:
+                if arg_name == pipeline_input.name:
+                    arg_type = pipeline_input.type
+                    break
+            if not type_utils.is_parameter_type(arg_type):
+                raise TypeError(
+                    'The pipeline argument "{arg_name}" is viewed as an artifact'
+                    ' due to its type "{arg_type}". And we currently do not '
+                    'support passing artifacts as pipeline inputs. Consider type'
+                    ' annotating the argument with a primitive type, such as '
+                    '"str", "int", "float", "bool", "dict", and "list".'.format(
+                        arg_name=arg_name, arg_type=arg_type))
+            args_list.append(
+                dsl.PipelineParam(
+                    sanitize_k8s_name(arg_name, True), param_type=arg_type))
+
+        with dsl.Pipeline(pipeline_name) as dsl_pipeline:
+            pipeline_func(*args_list)
+
+        if not dsl_pipeline.ops:
+            raise ValueError('Task is missing from pipeline.')
+
+        self._validate_exit_handler(dsl_pipeline)
+        self._sanitize_and_inject_artifact(dsl_pipeline)
+
+        # Fill in the default values.
+        args_list_with_defaults = []
+        if pipeline_meta.inputs:
+            args_list_with_defaults = [
+                dsl.PipelineParam(
+                    sanitize_k8s_name(input_spec.name, True),
+                    param_type=input_spec.type,
+                    value=input_spec.default)
+                for input_spec in pipeline_meta.inputs
+            ]
+
+        # Making the pipeline group name unique to prevent name clashes with templates
+        pipeline_group = dsl_pipeline.groups[0]
+        temp_pipeline_group_name = uuid.uuid4().hex
+        pipeline_group.name = temp_pipeline_group_name
+
+        pipeline_spec = self._create_pipeline_spec(
+            args_list_with_defaults,
+            dsl_pipeline,
+        )
+
+        pipeline_parameters = {
+            param.name: param for param in args_list_with_defaults
+        }
+        # Update pipeline parameters override if there were any.
+        pipeline_parameters_override = pipeline_parameters_override or {}
+        for k, v in pipeline_parameters_override.items():
+            if k not in pipeline_parameters:
+                raise ValueError(
+                    'Pipeline parameter {} does not match any known '
+                    'pipeline argument.'.format(k))
+            pipeline_parameters[k].value = v
+
+        runtime_config = compiler_utils.build_runtime_config_spec(
+            output_directory=pipeline_root,
+            pipeline_parameters=pipeline_parameters)
+        pipeline_job = pipeline_spec_pb2.PipelineJob(
+            runtime_config=runtime_config)
+        pipeline_job.pipeline_spec.update(
+            json_format.MessageToDict(pipeline_spec))
+
+        return pipeline_job
+
+    def compile(self,
+                pipeline_func: Callable[..., Any],
+                package_path: str,
+                pipeline_name: Optional[str] = None,
+                pipeline_parameters: Optional[Mapping[str, Any]] = None,
+                type_check: bool = True) -> None:
+        """Compile the given pipeline function into pipeline job json.
+
+        Args:
+          pipeline_func: Pipeline function with @dsl.pipeline decorator.
+          package_path: The output pipeline job .json file path. for example,
+            "~/pipeline_job.json"
+          pipeline_name: The name of the pipeline. Optional.
+          pipeline_parameters: The mapping from parameter names to values. Optional.
+          type_check: Whether to enable the type check or not, default: True.
+        """
+        warnings.warn(
+            'APIs imported from the v1 namespace (e.g. kfp.dsl, kfp.components, '
+            'etc) will not be supported by the v2 compiler since v2.0.0',
+            category=FutureWarning,
+        )
+
+        type_check_old_value = kfp.TYPE_CHECK
+        compiling_for_v2_old_value = kfp.COMPILING_FOR_V2
+        try:
+            kfp.TYPE_CHECK = type_check
+            kfp.COMPILING_FOR_V2 = True
+            pipeline_job = self._create_pipeline_v2(
+                pipeline_func=pipeline_func,
+                pipeline_name=pipeline_name,
+                pipeline_parameters_override=pipeline_parameters)
+            self._write_pipeline(pipeline_job, package_path)
+        finally:
+            kfp.TYPE_CHECK = type_check_old_value
+            kfp.COMPILING_FOR_V2 = compiling_for_v2_old_value
+
+    def _write_pipeline(self, pipeline_job: pipeline_spec_pb2.PipelineJob,
+                        output_path: str) -> None:
+        """Dump pipeline spec into json file.
+
+        Args:
+          pipeline_job: IR pipeline job spec.
+          ouput_path: The file path to be written.
+
+        Raises:
+          ValueError: if the specified output path doesn't end with the acceptable
+          extentions.
+        """
+        json_text = json_format.MessageToJson(pipeline_job, sort_keys=True)
+
+        if output_path.endswith('.json'):
+            with open(output_path, 'w') as json_file:
+                json_file.write(json_text)
+        else:
+            raise ValueError(
+                'The output path {} should ends with ".json".'.format(
+                    output_path))

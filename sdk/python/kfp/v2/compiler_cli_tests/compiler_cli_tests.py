@@ -162,6 +162,13 @@ class CompilerCliTests(unittest.TestCase):
     def test_pipeline_with_exit_handler(self):
         self._test_compile_py_to_json('pipeline_with_exit_handler')
 
+    def test_pipeline_with_exit_handler_experimental(self):
+        self._test_compile_py_to_json(
+            'experimental_pipeline_with_exit_handler', use_experimental=True)
+
+    def test_pipeline_with_parallelfor_parallelism(self):
+        self._test_compile_py_to_json('pipeline_with_parallelfor_parallelism')
+
     def test_pipeline_with_env(self):
         self._test_compile_py_to_json('pipeline_with_env')
 
@@ -171,8 +178,14 @@ class CompilerCliTests(unittest.TestCase):
     def test_pipeline_with_gcpc_types(self):
         self._test_compile_py_to_json('pipeline_with_gcpc_types')
 
-    def test_pipeline_with_placeholders(self):
-        self._test_compile_py_to_json('pipeline_with_placeholders')
+    def test_pipeline_with_task_final_status(self):
+        self._test_compile_py_to_json('pipeline_with_task_final_status')
+
+    def test_pipeline_with_task_final_status_yaml(self):
+        self._test_compile_py_to_json('pipeline_with_task_final_status_yaml')
+
+    def test_v2_component_with_pip_index_urls(self):
+        self._test_compile_py_to_json('v2_component_with_pip_index_urls')
 
 
 if __name__ == '__main__':

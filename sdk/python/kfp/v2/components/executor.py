@@ -16,6 +16,7 @@ import json
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from kfp.v2.components.types import artifact_types, type_annotations
+from kfp.v2.components import task_final_status
 
 
 class Executor():
@@ -240,13 +241,13 @@ class Executor():
                     'Unknown return type: {}. Must be one of `str`, `int`, `float`, a'
                     ' subclass of `Artifact`, or a NamedTuple collection of these types.'
                     .format(self._return_annotation))
-
         import os
-        os.makedirs(
-            os.path.dirname(self._input['outputs']['outputFile']),
-            exist_ok=True)
-        with open(self._input['outputs']['outputFile'], 'w') as f:
-            f.write(json.dumps(self._executor_output))
+        executor_output_path = self._input['outputs']['outputFile']
+        # This check is to reduce the likelihood that two or more workers (in a distributed training/compute strategy) attempt to write to the same executor output file at the same time using gcsfuse. Do not remove until fixed by gcsfuse.
+        if not os.path.exists(executor_output_path):
+            os.makedirs(os.path.dirname(executor_output_path), exist_ok=True)
+            with open(executor_output_path, 'w') as f:
+                f.write(json.dumps(self._executor_output))
 
     def execute(self):
         annotations = inspect.getfullargspec(self._func).annotations
@@ -263,7 +264,20 @@ class Executor():
             # `Optional[]` to get the actual parameter type.
             v = type_annotations.maybe_strip_optional_from_annotation(v)
 
-            if self._is_parameter(v):
+            if v is task_final_status.PipelineTaskFinalStatus:
+                value = self._get_input_parameter_value(k, v)
+                func_kwargs[k] = task_final_status.PipelineTaskFinalStatus(
+                    state=value.get('state'),
+                    pipeline_job_resource_name=value.get(
+                        'pipelineJobResourceName'),
+                    # pipelineTaskName won't be None once the Vertex Pipelines
+                    # BE change is rolled out
+                    pipeline_task_name=value.get('pipelineTaskName', None),
+                    error_code=value.get('error').get('code', None),
+                    error_message=value.get('error').get('message', None),
+                )
+
+            elif self._is_parameter(v):
                 value = self._get_input_parameter_value(k, v)
                 if value is not None:
                     func_kwargs[k] = value

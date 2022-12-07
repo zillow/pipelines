@@ -1,4 +1,4 @@
-# Copyright 2020 The Kubeflow Authors
+# Copyright 2020-2022 The Kubeflow Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,11 +18,15 @@ import shutil
 import tempfile
 import unittest
 
-from absl.testing import parameterized
-from kfp.v2 import components
+from typing import List
+
+from kfp import components
+from kfp.dsl import types
 from kfp.v2 import compiler
 from kfp.v2 import dsl
-from kfp.v2.components.types import type_utils
+from kfp.v2.compiler import compiler_utils
+from kfp.v2.dsl import PipelineTaskFinalStatus
+import yaml
 
 VALID_PRODUCER_COMPONENT_SAMPLE = components.load_component_from_text("""
     name: producer
@@ -576,6 +580,168 @@ class CompilerTest(parameterized.TestCase):
                 'Task dummy-op cannot dependent on any task inside the group:'):
             compiler.Compiler().compile(
                 pipeline_func=my_pipeline, package_path='result.json')
+
+    def test_use_task_final_status_in_non_exit_op(self):
+
+        @dsl.component
+        def print_op(status: PipelineTaskFinalStatus):
+            return status
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline():
+            print_op()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                'PipelineTaskFinalStatus can only be used in an exit task.'):
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path='result.json')
+
+    def test_use_task_final_status_in_non_exit_op_yaml(self):
+
+        print_op = components.load_component_from_text("""
+name: Print Op
+inputs:
+- {name: message, type: PipelineTaskFinalStatus}
+implementation:
+  container:
+    image: python:3.7
+    command:
+    - echo
+    - {inputValue: message}
+""")
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline():
+            print_op()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                'PipelineTaskFinalStatus can only be used in an exit task.'):
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path='result.json')
+
+    def test_set_retry(self):
+
+        @dsl.component
+        def add(a: float, b: float) -> float:
+            return a + b
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(a: float = 1, b: float = 7):
+            add_task = add(a, b)
+            add_task.set_retry(
+                num_retries=3,
+                backoff_duration='30s',
+                backoff_factor=1.0,
+                backoff_max_duration='3h',
+            )
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path=package_path)
+            with open(package_path, 'r') as f:
+                pipeline_spec_dict = yaml.safe_load(f)
+
+        retry_policy = pipeline_spec_dict['pipelineSpec']['root']['dag'][
+            'tasks']['add']['retryPolicy']
+        self.assertEqual(retry_policy['maxRetryCount'], 3.0)
+        self.assertEqual(retry_policy['backoffDuration'], '30s')
+        self.assertEqual(retry_policy['backoffFactor'], 1.0)
+
+        # tests backoff max duration cap of 1 hour
+        self.assertEqual(retry_policy['backoffMaxDuration'], '3600s')
+
+    def test_retry_policy_throws_warning(self):
+
+        @dsl.component
+        def add(a: float, b: float) -> float:
+            return a + b
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(a: float = 1, b: float = 7):
+            add_task = add(a, b)
+            add_task.set_retry(num_retries=3, policy='Always')
+
+        with tempfile.TemporaryDirectory() as tempdir, self.assertWarnsRegex(
+                compiler_utils.NoOpWarning,
+                "'retry_policy' is ignored when compiling to IR using the v2 compiler"
+        ):
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path=package_path)
+
+    def test_parallel_for_parallelism(self):
+
+        @dsl.component
+        def print_op(msg: str):
+            print(msg)
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(loop_params: List[str] = ['hello', 'world']):
+            with dsl.ParallelFor(loop_args=loop_params, parallelism=5) as item:
+                print_op(item)
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path=package_path)
+            with open(package_path, 'r') as f:
+                pipeline_spec_dict = yaml.safe_load(f)
+
+        iterator_policy = pipeline_spec_dict['pipelineSpec']['root']['dag'][
+            'tasks']['for-loop-1']['iteratorPolicy']
+        self.assertEqual(iterator_policy['parallelismLimit'], 5)
+
+    def test_parallel_for_invalid_parallelism(self):
+
+        @dsl.component
+        def print_op(msg: str):
+            print(msg)
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(loop_params: List[str] = ['hello', 'world']):
+            with dsl.ParallelFor(loop_args=loop_params, parallelism=-5) as item:
+                print_op(item)
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            with self.assertRaisesRegex(
+                    ValueError, 'ParallelFor parallelism must be >= 0.'):
+                compiler.Compiler().compile(
+                    pipeline_func=my_pipeline, package_path=package_path)
+
+    def test_parallel_for_no_parallelism(self):
+
+        @dsl.component
+        def print_op(msg: str):
+            print(msg)
+
+        @dsl.pipeline(name='test-pipeline')
+        def my_pipeline(loop_params: List[str] = ['hello', 'world']):
+            with dsl.ParallelFor(loop_args=loop_params) as item:
+                print_op(item)
+
+            with dsl.ParallelFor(loop_args=loop_params, parallelism=0) as item:
+                print_op(item)
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            package_path = os.path.join(tempdir, 'pipeline.json')
+            compiler.Compiler().compile(
+                pipeline_func=my_pipeline, package_path=package_path)
+            with open(package_path, 'r') as f:
+                pipeline_spec_dict = yaml.safe_load(f)
+
+        for_loop_1 = pipeline_spec_dict['pipelineSpec']['root']['dag']['tasks'][
+            'for-loop-1']
+        with self.assertRaises(KeyError):
+            for_loop_1['iteratorPolicy']
+
+        for_loop_2 = pipeline_spec_dict['pipelineSpec']['root']['dag']['tasks'][
+            'for-loop-2']
+        with self.assertRaises(KeyError):
+            for_loop_2['iteratorPolicy']
 
 
 if __name__ == '__main__':

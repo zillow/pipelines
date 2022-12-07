@@ -1,4 +1,106 @@
 # Current Version (Still in Development)
+## Major Features and Improvements
+
+## Breaking Changes
+
+### For Pipeline Authors
+
+### For Component Authors
+
+## Deprecations
+
+## Bug Fixes and Other Changes
+
+## Documentation Updates
+# 1.8.16
+## Major Features and Improvements
+
+## Breaking Changes
+
+### For Pipeline Authors
+
+### For Component Authors
+
+## Deprecations
+
+## Bug Fixes and Other Changes
+* Relax required google-auth version from `>=1.6.1,<2` to `>=1.6.1,<3` [#8470](https://github.com/kubeflow/pipelines/pull/8470), [#8473](https://github.com/kubeflow/pipelines/pull/8473)
+
+## Documentation Updates
+# 1.8.15
+## Major Features and Improvements
+* Add ability to skip building image when using `kfp component build` [#8383](https://github.com/kubeflow/pipelines/pull/8383)
+
+## Breaking Changes
+
+### For Pipeline Authors
+
+### For Component Authors
+
+## Deprecations
+
+## Bug Fixes and Other Changes
+* Fix bug when writing to same file using gcsfuse and distributed training strategy in lightweight/containerized Python components [#8454](https://github.com/kubeflow/pipelines/pull/8454)
+
+## Documentation Updates
+# 1.8.14
+## Major Features and Improvements
+* Support parallelism setting in ParallelFor [/#8112](https://github.com/kubeflow/pipelines/pull/8112)
+
+## Breaking Changes
+
+### For Pipeline Authors
+* Support dynamic importer metadata [/#8226](https://github.com/kubeflow/pipelines/pull/8226)
+
+### For Component Authors
+
+## Deprecations
+
+## Bug Fixes and Other Changes
+* Migrate Out-Of-Band (OOB) authentication flow [\#8262](https://github.com/kubeflow/pipelines/pull/8262)
+
+## Documentation Updates
+* Add importer documentation [\#3344](https://github.com/kubeflow/website/pull/3344)
+
+# 1.8.13
+## Major Features and Improvements
+
+## Breaking Changes
+
+### For Pipeline Authors
+* Add support for task-level retry policy when compiling pipeline to IR [\#7875](https://github.com/kubeflow/pipelines/pull/7875)
+
+### For Component Authors
+
+## Deprecations
+
+## Bug Fixes and Other Changes
+* Depends on `google-cloud-storage>=2.2.1,<3` [\#7502](https://github.com/kubeflow/pipelines/pull/7502)
+* Accepts `typing-extensions>=4,<5` in addition to `typing-extensions>=3.7.4,<4` [\#7801](https://github.com/kubeflow/pipelines/pull/7801)
+* Fixes 'ComponentStore' object has no attribute 'uri_search_template'. [\#8002](https://github.com/kubeflow/pipelines/pull/8002)
+
+## Documentation Updates
+
+# 1.8.12
+## Major Features and Improvements
+
+* Enable pip installation from custom PyPI repository [\#7470](https://github.com/kubeflow/pipelines/pull/7470)
+* Support getting pipeline status in exit handler. [\#7483](https://github.com/kubeflow/pipelines/pull/7483)
+## Breaking Changes
+
+### For Pipeline Authors
+
+### For Component Authors
+
+## Deprecations
+
+## Bug Fixes and Other Changes
+* No longer require KFP client for kfp components build [\#7410](https://github.com/kubeflow/pipelines/pull/7410)
+* Require google-api-core>=1.31.5, >=2.3.2 [#7377](https://github.com/kubeflow/pipelines/pull/7377)
+
+## Documentation Updates
+
+# 2.0.0-alpha.1
 
 ## Major Features and Improvements
 
@@ -24,9 +126,45 @@
 
 ## Bug Fixes and Other Changes
 
+* Depends on `kfp-server-api>=2.0.0a0, <3` [\#7427](https://github.com/kubeflow/pipelines/pull/7427)
+
+## Documentation Updates
+
+# 2.0.0-alpha.0
+
+## Major Features and Improvements
+
+* Support passing parameters in v2 using google.protobuf.Value [\#6804](https://github.com/kubeflow/pipelines/pull/6804).
+* Implement experimental v2 `@component` component [\#6825](https://github.com/kubeflow/pipelines/pull/6825)
+* Add load_component_from_* for v2 [\#6822](https://github.com/kubeflow/pipelines/pull/6822)
+* Merge v2 experimental change back to v2 namespace [\#6890](https://github.com/kubeflow/pipelines/pull/6890)
+* Add ImporterSpec v2 [\#6917](https://github.com/kubeflow/pipelines/pull/6917)
+* Add add set_env_variable for Pipeline task [\#6919](https://github.com/kubeflow/pipelines/pull/6919)
+* Add metadata field for importer [\#7112](https://github.com/kubeflow/pipelines/pull/7112)
+* Add in filter to list_pipeline_versions SDK method [\#7223](https://github.com/kubeflow/pipelines/pull/7223)
+* Add `enable_job` method to client [\#7239](https://github.com/kubeflow/pipelines/pull/7239)
+* Support getting pipeline status in exit handler. [\#7309](https://github.com/kubeflow/pipelines/pull/7309)
+* Support KFP v2 API in kfp.client [\#7411](https://github.com/kubeflow/pipelines/pull/7411)
+
+## Breaking Changes
+
+* Remove sdk/python/kfp/v2/google directory for v2, including google client and custom job [\#6886](https://github.com/kubeflow/pipelines/pull/6886)
+* APIs imported from the v1 namespace are no longer supported by the v2 compiler. [\#6890](https://github.com/kubeflow/pipelines/pull/6890)
+* Deprecate v2 compatible mode in v1 compiler. [\#6958](https://github.com/kubeflow/pipelines/pull/6958)
+* Drop support for python 3.6 [\#7303](https://github.com/kubeflow/pipelines/pull/7303)
+* Deprecate v1 code to deprecated folder [\#7291](https://github.com/kubeflow/pipelines/pull/7291)
+* Disable output_component_file temporarily for v2 early release [\#7390](https://github.com/kubeflow/pipelines/pull/7390)
+
+### For Pipeline Authors
+
+### For Component Authors
+
+## Deprecations
+
+## Bug Fixes and Other Changes
+
 * Fix importer ignoring reimport setting, and switch to Protobuf.Value for import uri [\#6827](https://github.com/kubeflow/pipelines/pull/6827)
 * Fix display name support for groups [\#6832](https://github.com/kubeflow/pipelines/pull/6832)
-* Remove redundant check in set_gpu_limit [\#6866](https://github.com/kubeflow/pipelines/pull/6866)
 * Fix regression on optional inputs [\#6905](https://github.com/kubeflow/pipelines/pull/6905) [\#6937](https://github.com/kubeflow/pipelines/pull/6937)
 * Depends on `google-auth>=1.6.1,<3` [\#6939](https://github.com/kubeflow/pipelines/pull/6939)
 * Change otherwise to else in yaml [\#6952](https://github.com/kubeflow/pipelines/pull/6952)
@@ -35,6 +173,38 @@
 * Fix bug for resourceSpec [\#6979](https://github.com/kubeflow/pipelines/pull/6979)
 * Fix regression on nested loops [\#6990](https://github.com/kubeflow/pipelines/pull/6990)
 * Fix bug for input/outputspec and positional arguments [\#6980](https://github.com/kubeflow/pipelines/pull/6980)
+* Fix importer not using correct output artifact type [\#7235](https://github.com/kubeflow/pipelines/pull/7235)
+* Add verify_ssl for Kubeflow client [\#7174](https://github.com/kubeflow/pipelines/pull/7174)
+* Depends on `typing-extensions>=3.7.4,<5; python_version<"3.9"` [\#7288](https://github.com/kubeflow/pipelines/pull/7288)
+* Depends on `google-api-core>=1.31.5, >=2.3.2` [\#7377](https://github.com/kubeflow/pipelines/pull/7377)
+* Fix bug that required KFP API server for `kfp components build` command to work [\#7430](https://github.com/kubeflow/pipelines/pull/7430)
+* Pass default value for inputs and remove deprecated items in v1 [\#7405](https://github.com/kubeflow/pipelines/pull/7405)
+
+
+## Documentation Updates
+
+# 1.8.11
+
+## Major Features and Improvements
+
+* kfp.Client uses namespace from initialization if set for the instance context [\#7056](https://github.com/kubeflow/pipelines/pull/7056)
+* Add importer_spec metadata to v1 [\#7180](https://github.com/kubeflow/pipelines/pull/7180)
+
+## Breaking Changes
+
+* Fix breaking change in Argo 3.0, to define TTL for workflows. Makes SDK incompatible with KFP pre-1.7 versions [\#7141](https://github.com/kubeflow/pipelines/pull/7141)
+
+### For Pipeline Authors
+
+### For Component Authors
+
+## Deprecations
+
+## Bug Fixes and Other Changes
+
+* Remove redundant check in set_gpu_limit [\#6866](https://github.com/kubeflow/pipelines/pull/6866)
+* Fix create_runtime_artifact not covering all types. [\#7168](https://github.com/kubeflow/pipelines/pull/7168)
+* Depend on `absl-py>=0.9,<2` [\#7172](https://github.com/kubeflow/pipelines/pull/7172)
 
 ## Documentation Updates
 
@@ -432,7 +602,7 @@
 
 ## Breaking Changes
 
-* `kfp.v2.components`no longer imports everything from `kfp.components`. For instance, `load_component_from_*` methods are available only from `kfp.components`, but not from `kfp.v2.components`.
+* `kfp.components`no longer imports everything from `kfp.components`. For instance, `load_component_from_*` methods are available only from `kfp.components`, but not from `kfp.components`.
 * No more ['_path' suffix striping](https://github.com/kubeflow/pipelines/issues/5279) from v2 components.
 
 ### For Pipeline Authors
