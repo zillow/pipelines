@@ -2,9 +2,10 @@ package server
 
 import (
 	"context"
-	"google.golang.org/protobuf/testing/protocmp"
 	"strings"
 	"testing"
+
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
 	"github.com/golang/protobuf/ptypes/timestamp"
@@ -182,9 +183,9 @@ func TestCreateRun_Unauthorized(t *testing.T) {
 
 func TestCreateRun_Multiuser(t *testing.T) {
 	viper.Set(common.MultiUserMode, "true")
-	viper.Set(common.DefaultPipelineRunnerServiceAccount, "default-editor")
+	viper.Set(common.DefaultPipelineRunnerServiceAccountFlag, "default-editor")
 	defer viper.Set(common.MultiUserMode, "false")
-	defer viper.Set(common.DefaultPipelineRunnerServiceAccount, "pipeline-runner")
+	defer viper.Set(common.DefaultPipelineRunnerServiceAccountFlag, "pipeline-runner")
 
 	md := metadata.New(map[string]string{common.GoogleIAPUserIdentityHeader: common.GoogleIAPUserIdentityPrefix + "user@google.com"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -282,6 +283,7 @@ func TestListRun(t *testing.T) {
 		},
 	}
 	listRunsResponse, err := server.ListRuns(nil, &api.ListRunsRequest{})
+	assert.Nil(t, err)
 	assert.Equal(t, 1, len(listRunsResponse.Runs))
 	assert.Equal(t, expectedRun, listRunsResponse.Runs[0])
 }
@@ -440,7 +442,7 @@ func TestListRuns_Multiuser(t *testing.T) {
 		} else {
 			if err != nil {
 				t.Errorf("TestListRuns_Multiuser(%v) expect no error but got %v", tc.name, err)
-			} else if !cmp.Equal(tc.expectedRuns, response.Runs, cmpopts.EquateEmpty(), protocmp.Transform(),cmpopts.IgnoreFields(api.Run{}, "ScheduledAt", "FinishedAt", "CreatedAt")) {
+			} else if !cmp.Equal(tc.expectedRuns, response.Runs, cmpopts.EquateEmpty(), protocmp.Transform(), cmpopts.IgnoreFields(api.Run{}, "ScheduledAt", "FinishedAt", "CreatedAt")) {
 				t.Errorf("TestListRuns_Multiuser(%v) expect (%+v) but got (%+v)", tc.name, tc.expectedRuns, response.Runs)
 			}
 		}
@@ -531,7 +533,7 @@ func TestValidateCreateRunRequest_NilPipelineSpecAndEmptyPipelineVersion(t *test
 	}
 	err := server.validateCreateRunRequest(&api.CreateRunRequest{Run: run})
 	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "Please specify a pipeline by providing a (workflow manifest) or (pipeline id or/and pipeline version).")
+	assert.Contains(t, err.Error(), "Please specify a pipeline by providing a (workflow manifest or pipeline manifest) or (pipeline id or/and pipeline version).")
 }
 
 func TestValidateCreateRunRequest_WorkflowManifestAndPipelineVersion(t *testing.T) {
@@ -548,7 +550,7 @@ func TestValidateCreateRunRequest_WorkflowManifestAndPipelineVersion(t *testing.
 	}
 	err := server.validateCreateRunRequest(&api.CreateRunRequest{Run: run})
 	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "Please don't specify a pipeline version or pipeline ID when you specify a workflow manifest.")
+	assert.Contains(t, err.Error(), "Please don't specify a pipeline version or pipeline ID when you specify a workflow manifest or pipeline manifest.")
 }
 
 func TestValidateCreateRunRequest_InvalidPipelineSpec(t *testing.T) {
@@ -566,7 +568,7 @@ func TestValidateCreateRunRequest_InvalidPipelineSpec(t *testing.T) {
 	}
 	err := server.validateCreateRunRequest(&api.CreateRunRequest{Run: run})
 	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "Please don't specify a pipeline version or pipeline ID when you specify a workflow manifest.")
+	assert.Contains(t, err.Error(), "Please don't specify a pipeline version or pipeline ID when you specify a workflow manifest or pipeline manifest.")
 }
 
 func TestValidateCreateRunRequest_TooMuchParameters(t *testing.T) {

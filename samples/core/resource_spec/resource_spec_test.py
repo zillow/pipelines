@@ -14,32 +14,33 @@
 
 import kfp
 from .resource_spec import my_pipeline
-from ...test.util import run_pipeline_func, TestCase
+from .resource_spec_v2 import my_pipeline as my_pipeline_v2
+from kfp.samples.test.utils import run_pipeline_func, TestCase
 
 
 def EXPECTED_OOM(run_id, run, **kwargs):
-    '''confirms a sample test case is failing, because of OOM '''
+    """confirms a sample test case is failing, because of OOM."""
     assert run.status == 'Failed'
 
 
 run_pipeline_func([
     TestCase(
-        pipeline_func=my_pipeline,
-        mode=kfp.dsl.PipelineExecutionMode.V1_LEGACY,
+        pipeline_func=my_pipeline_v2,
+        mode=kfp.dsl.PipelineExecutionMode.V2_ENGINE,
     ),
     TestCase(
-        pipeline_func=my_pipeline,
-        mode=kfp.dsl.PipelineExecutionMode.V2_COMPATIBLE,
-    ),
-    TestCase(
-        pipeline_func=my_pipeline,
-        mode=kfp.dsl.PipelineExecutionMode.V1_LEGACY,
+        pipeline_func=my_pipeline_v2,
+        mode=kfp.dsl.PipelineExecutionMode.V2_ENGINE,
         arguments={'n': 21234567},
         verify_func=EXPECTED_OOM,
     ),
     TestCase(
         pipeline_func=my_pipeline,
-        mode=kfp.dsl.PipelineExecutionMode.V2_COMPATIBLE,
+        mode=kfp.dsl.PipelineExecutionMode.V1_LEGACY,
+    ),
+    TestCase(
+        pipeline_func=my_pipeline,
+        mode=kfp.dsl.PipelineExecutionMode.V1_LEGACY,
         arguments={'n': 21234567},
         verify_func=EXPECTED_OOM,
     ),

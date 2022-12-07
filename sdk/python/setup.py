@@ -29,10 +29,10 @@ REQUIRES = [
     # https://github.com/googleapis/python-storage/blob/master/CHANGELOG.md#1200
     'google-cloud-storage>=1.20.0,<2',
     'kubernetes>=8.0.0,<25',
-    # google-api-python-client v2 doesn't work for private dicovery by default:
-    # https://github.com/googleapis/google-api-python-client/issues/1225#issuecomment-791058235
-    'google-api-python-client>=1.7.8,<2',
-    'google-auth>=1.6.1,<2',
+    # NOTE: Maintainers, please do not require google-auth>=2.x.x
+    # Until this issue is closed
+    # https://github.com/googleapis/google-cloud-python/issues/10566
+    'google-auth>=1.6.1,<3',
     'requests-toolbelt>=0.8.0,<1',
     'cloudpickle>=2.0.0,<3',
     # Update the upper version whenever a new major version of the
@@ -56,10 +56,6 @@ REQUIRES = [
     # Standard library backports
     'dataclasses;python_version<"3.7"',
     'typing-extensions>=3.7.4,<4;python_version<"3.9"',
-]
-
-TESTS_REQUIRE = [
-    'frozendict',
 ]
 
 EXTRAS_REQUIRE = {
@@ -100,7 +96,6 @@ setup(
             "https://github.com/kubeflow/pipelines/blob/master/sdk/RELEASE.md",
     },
     install_requires=REQUIRES,
-    tests_require=TESTS_REQUIRE,
     extras_require=EXTRAS_REQUIRE,
     packages=[
         'kfp',
@@ -116,15 +111,9 @@ setup(
         'kfp.notebook',
         'kfp.v2',
         'kfp.v2.compiler',
-        'kfp.v2.compiler.experimental',
         'kfp.v2.components',
         'kfp.v2.components.types',
-        'kfp.v2.components.types.experimental',
-        'kfp.v2.components.experimental',
         'kfp.v2.dsl',
-        'kfp.v2.dsl.experimental',
-        'kfp.v2.google.client',
-        'kfp.v2.google.experimental',
     ],
     classifiers=[
         'Intended Audience :: Developers',

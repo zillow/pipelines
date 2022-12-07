@@ -15,14 +15,25 @@
 
 import os
 
-from .component import serialize_parameters
-from kfp import components
+from .utils import serialize_parameters, serialize_metrics, GetTrialsOp, GetBestTrialOp, GetBestHyperparametersOp, GetHyperparametersOp, GetWorkerPoolSpecsOp, IsMetricBeyondThresholdOp
+try:
+  from kfp.v2.components import load_component_from_file
+except ImportError:
+  from kfp.components import load_component_from_file
 
 __all__ = [
     'HyperparameterTuningJobRunOp',
+    'GetTrialsOp',
+    'GetBestTrialOp',
+    'GetBestHyperparametersOp',
+    'GetHyperparametersOp',
+    'GetWorkerPoolSpecsOp',
+    'IsMetricBeyondThresholdOp',
     'serialize_parameters',
+    'serialize_metrics',
 ]
 
-HyperparameterTuningJobRunOp = components.load_component_from_file(
+
+HyperparameterTuningJobRunOp = load_component_from_file(
     os.path.join(os.path.dirname(__file__), 'component.yaml'))
 

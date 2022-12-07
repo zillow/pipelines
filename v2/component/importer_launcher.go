@@ -3,7 +3,8 @@ package component
 import (
 	"context"
 	"fmt"
-	pb "github.com/kubeflow/pipelines/v2/third_party/ml_metadata"
+
+	pb "github.com/kubeflow/pipelines/third_party/ml-metadata/go/ml_metadata"
 
 	"github.com/kubeflow/pipelines/api/v2alpha1/go/pipelinespec"
 	"github.com/kubeflow/pipelines/v2/metadata"
@@ -17,6 +18,24 @@ type ImporterLauncherOptions struct {
 	PipelineName string
 	// required, KFP run ID
 	RunID string
+	// required, parent DAG execution ID
+	ParentDagID int64
+}
+
+func (o *ImporterLauncherOptions) validate() error {
+	if o == nil {
+		return fmt.Errorf("empty importer launcher options")
+	}
+	if o.PipelineName == "" {
+		return fmt.Errorf("importer launcher options: pipeline name is empty")
+	}
+	if o.RunID == "" {
+		return fmt.Errorf("importer launcher options: Run ID is empty")
+	}
+	if o.ParentDagID == 0 {
+		return fmt.Errorf("importer launcher options: Parent DAG ID is not provided")
+	}
+	return nil
 }
 
 type ImportLauncher struct {
@@ -56,6 +75,10 @@ func NewImporterLauncher(ctx context.Context, componentSpecJSON, importerSpecJSO
 	if err != nil {
 		return nil, err
 	}
+	err = importerLauncherOpts.validate()
+	if err != nil {
+		return nil, err
+	}
 	restConfig, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize kubernetes client: %w", err)
@@ -85,21 +108,25 @@ func (l *ImportLauncher) Execute(ctx context.Context) (err error) {
 			err = fmt.Errorf("failed to execute importer component: %w", err)
 		}
 	}()
-	// TODO(): there's no need to pass any parameters, because pipeline
+	// TODO(Bobgy): there's no need to pass any parameters, because pipeline
 	// and pipeline run context have been created by root DAG driver.
 	pipeline, err := l.metadataClient.GetPipeline(ctx, l.importerLauncherOptions.PipelineName, l.importerLauncherOptions.RunID, "", "", "")
 	if err != nil {
 		return err
 	}
 	ecfg := &metadata.ExecutionConfig{
-		TaskName:  l.task.GetTaskInfo().GetName(),
-		PodName:   l.launcherV2Options.PodName,
-		PodUID:    l.launcherV2Options.PodUID,
-		Namespace: l.launcherV2Options.Namespace,
+		TaskName:      l.task.GetTaskInfo().GetName(),
+		PodName:       l.launcherV2Options.PodName,
+		PodUID:        l.launcherV2Options.PodUID,
+		Namespace:     l.launcherV2Options.Namespace,
 		ExecutionType: metadata.ImporterExecutionTypeName,
+		ParentDagID:   l.importerLauncherOptions.ParentDagID,
 	}
 	createdExecution, err := l.metadataClient.CreateExecution(ctx, pipeline, ecfg)
-	artifact, err := l.FindOrNewArtifactToImport(ctx, createdExecution)
+	if err != nil {
+		return err
+	}
+	artifact, err := l.findOrNewArtifactToImport(ctx, createdExecution)
 	if err != nil {
 		return err
 	}
@@ -120,7 +147,7 @@ func (l *ImportLauncher) Execute(ctx context.Context) (err error) {
 	return nil
 }
 
-func (l *ImportLauncher) FindOrNewArtifactToImport(ctx context.Context, execution *metadata.Execution) (artifact *pb.Artifact, err error) {
+func (l *ImportLauncher) findOrNewArtifactToImport(ctx context.Context, execution *metadata.Execution) (artifact *pb.Artifact, err error) {
 	// TODO consider moving logic to package metadata so that *pb.Artifact won't get exposed outside of package metadata
 	artifactToImport, err := l.ImportSpecToMLMDArtifact(ctx)
 	if err != nil {
@@ -139,7 +166,7 @@ func (l *ImportLauncher) FindOrNewArtifactToImport(ctx context.Context, executio
 	return artifactToImport, nil
 }
 
-func (l *ImportLauncher) ImportSpecToMLMDArtifact(ctx context.Context, ) (artifact *pb.Artifact, err error) {
+func (l *ImportLauncher) ImportSpecToMLMDArtifact(ctx context.Context) (artifact *pb.Artifact, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("failed to create MLMD artifact from ImporterSpec: %w", err)
@@ -155,10 +182,10 @@ func (l *ImportLauncher) ImportSpecToMLMDArtifact(ctx context.Context, ) (artifa
 		return nil, fmt.Errorf("failed to get or insert artifact type with schema %s: %w", schema, err)
 	}
 
-	if l.importer.GetArtifactUri().GetConstantValue() == nil || l.importer.GetArtifactUri().GetConstantValue().GetStringValue() == "" {
+	artifactUri := l.importer.GetArtifactUri().GetConstant().GetStringValue()
+	if artifactUri == "" {
 		return nil, fmt.Errorf("failed to get artifactUri from ImporterSpec")
 	}
-	artifactUri := l.importer.GetArtifactUri().GetConstantValue().GetStringValue()
 	state := pb.Artifact_LIVE
 
 	artifact = &pb.Artifact{
@@ -183,7 +210,7 @@ func (l *ImportLauncher) ImportSpecToMLMDArtifact(ctx context.Context, ) (artifa
 
 func (l *ImportLauncher) getOutPutArtifactName() (string, error) {
 	outPutNames := make([]string, 0, len(l.component.GetOutputDefinitions().GetArtifacts()))
-	for name, _ := range l.component.GetOutputDefinitions().GetArtifacts() {
+	for name := range l.component.GetOutputDefinitions().GetArtifacts() {
 		outPutNames = append(outPutNames, name)
 	}
 	if len(outPutNames) != 1 {

@@ -13,5 +13,18 @@
 # limitations under the License.
 """Module for supporting Google Vertex AI Custom Training Job Op."""
 
+import os
 
-from .custom_job import custom_training_job_op
+try:
+  from kfp.v2.components import load_component_from_file
+except ImportError:
+  from kfp.components import load_component_from_file
+
+__all__ = [
+    'CustomTrainingJobOp',
+]
+
+
+CustomTrainingJobOp = load_component_from_file(
+    os.path.join(os.path.dirname(__file__), 'component.yaml'))
+

@@ -14,14 +14,10 @@
 
 import kfp
 from .html import html_pipeline
-from ...test.util import run_pipeline_func, TestCase
+from kfp.samples.test.utils import run_pipeline_func, TestCase
 
-run_pipeline_func([TestCase(pipeline_func=html_pipeline,
-                            mode=kfp.dsl.PipelineExecutionMode.V2_COMPATIBLE,
-                            arguments={
-                                kfp.dsl.ROOT_PARAMETER_NAME:
-                                'minio://mlpipeline/override/artifacts'
-                            }),
-                   TestCase(pipeline_func=html_pipeline,
-                            mode=kfp.dsl.PipelineExecutionMode.V1_LEGACY
-                            )])
+run_pipeline_func([
+    TestCase(
+        pipeline_func=html_pipeline,
+        mode=kfp.dsl.PipelineExecutionMode.V1_LEGACY)
+])

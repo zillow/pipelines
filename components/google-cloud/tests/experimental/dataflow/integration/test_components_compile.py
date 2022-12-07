@@ -51,7 +51,7 @@ class ComponentsCompileTest(unittest.TestCase):
           python_module_path=self._python_module_path,
           temp_location=self._temp_location,
           requirements_file_path=self._requirements_file_path,
-          args=json.dumps(self._args))
+          args=self._args)
 
     compiler.Compiler().compile(
         pipeline_func=pipeline, package_path=self._package_path)
@@ -62,6 +62,6 @@ class ComponentsCompileTest(unittest.TestCase):
       expected_executor_output_json = json.load(ef, strict=False)
 
     # Ignore the kfp SDK & schema version during comparison
-    del executor_output_json['pipelineSpec']['sdkVersion']
-    del executor_output_json['pipelineSpec']['schemaVersion']
+    del executor_output_json['sdkVersion']
+    del executor_output_json['schemaVersion']
     self.assertDictEqual(executor_output_json, expected_executor_output_json)

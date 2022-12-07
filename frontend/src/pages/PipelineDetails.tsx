@@ -31,7 +31,7 @@ import {
 import * as WorkflowUtils from 'src/lib/v2/WorkflowUtils';
 import { convertJsonToV2PipelineSpec } from 'src/lib/v2/WorkflowUtils';
 import { classes } from 'typestyle';
-import { Workflow } from '../../third_party/argo-ui/argo_template';
+import { Workflow } from '../third_party/mlmd/argo_template';
 import { ApiExperiment } from '../apis/experiment';
 import { ApiGetTemplateResponse, ApiPipeline, ApiPipelineVersion } from '../apis/pipeline';
 import { QUERY_PARAMS, RoutePage, RouteParams } from '../components/Router';
@@ -116,7 +116,7 @@ class PipelineDetails extends Page<{}, PipelineDetailsState> {
           () => (pipelineVersionIdFromParams ? [pipelineVersionIdFromParams] : []),
           'pipeline version',
           this._deleteCallback.bind(this),
-          true /* useCurrentResource */,
+          pipelineVersionIdFromParams ? true : false /* useCurrentResource */,
         );
       return {
         actions: buttons.getToolbarActionMap(),

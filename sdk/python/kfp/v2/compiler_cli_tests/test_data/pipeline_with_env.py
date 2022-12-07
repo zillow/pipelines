@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import kfp.v2.compiler as compiler
-from kfp import components
+from kfp.v2 import components
 from kfp.v2 import dsl
+from kfp.v2 import compiler
 from kfp.v2.dsl import component
 
 
@@ -29,7 +29,7 @@ name: Print env
 implementation:
   container:
     image: alpine
-    command:
+    commands:
     - sh
     - -c
     - |

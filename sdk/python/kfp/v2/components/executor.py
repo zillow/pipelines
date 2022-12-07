@@ -68,25 +68,13 @@ class Executor():
 
     def _get_input_parameter_value(self, parameter_name: str,
                                    parameter_type: Any):
-        parameter = self._input.get('inputs',
-                                    {}).get('parameters',
-                                            {}).get(parameter_name, None)
-        if parameter is None:
-            return None
+        parameter_values = self._input.get('inputs',
+                                           {}).get('parameterValues', None)
 
-        if parameter.get('stringValue') is not None:
-            if parameter_type == str:
-                return parameter['stringValue']
-            elif parameter_type == bool:
-                # Use `.lower()` so it can also handle 'True' and 'False' (resulted from
-                # `str(True)` and `str(False)`, respectively.
-                return json.loads(parameter['stringValue'].lower())
-            else:
-                return json.loads(parameter['stringValue'])
-        elif parameter.get('intValue') is not None:
-            return int(parameter['intValue'])
-        elif parameter.get('doubleValue') is not None:
-            return float(parameter['doubleValue'])
+        if parameter_values is not None:
+            return parameter_values.get(parameter_name, None)
+
+        return None
 
     def _get_output_parameter_path(self, parameter_name: str):
         parameter = self._input.get('outputs',
@@ -120,20 +108,22 @@ class Executor():
     def _write_output_parameter_value(self, name: str,
                                       value: Union[str, int, float, bool, dict,
                                                    list, Dict, List]):
-        if type(value) == str:
-            output = {'stringValue': value}
-        elif type(value) == int:
-            output = {'intValue': value}
-        elif type(value) == float:
-            output = {'doubleValue': value}
+        if isinstance(value, (float, int)):
+            output = str(value)
+        elif isinstance(value, str):
+            # value is already a string.
+            output = value
+        elif isinstance(value, (bool, list, dict)):
+            output = json.dumps(value)
         else:
-            # For bool, list, dict, List, Dict, json serialize the value.
-            output = {'stringValue': json.dumps(value)}
+            raise ValueError(
+                'Unable to serialize unknown type `{}` for parameter'
+                ' input with value `{}`'.format(value, type(value)))
 
-        if not self._executor_output.get('parameters'):
-            self._executor_output['parameters'] = {}
+        if not self._executor_output.get('parameterValues'):
+            self._executor_output['parameterValues'] = {}
 
-        self._executor_output['parameters'][name] = output
+        self._executor_output['parameterValues'][name] = value
 
     def _write_output_artifact_payload(self, name: str, value: Any):
         path = self._get_output_artifact_path(name)
@@ -274,7 +264,9 @@ class Executor():
             v = type_annotations.maybe_strip_optional_from_annotation(v)
 
             if self._is_parameter(v):
-                func_kwargs[k] = self._get_input_parameter_value(k, v)
+                value = self._get_input_parameter_value(k, v)
+                if value is not None:
+                    func_kwargs[k] = value
 
             if type_annotations.is_artifact_annotation(v):
                 if type_annotations.is_input_artifact(v):

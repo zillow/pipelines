@@ -12,7 +12,7 @@ metadata:
 data:
   appName: 'my-release'
   namespace: 'kubeflow'
-  emissaryExecutor: 'false'
+  emissaryExecutor: 'true'
   managedStorageEnabled: 'false'
   #
 ---
@@ -826,12 +826,12 @@ subjects:
 apiVersion: v1
 data:
   # References:
-  # * https://github.com/argoproj/argo-workflows/blob/v3.1.6/config/config.go
-  # * https://github.com/argoproj/argo-workflows/blob/v3.1.6/docs/workflow-controller-configmap.md
-  # * https://github.com/argoproj/argo-workflows/blob/v3.1.6/docs/workflow-controller-configmap.yaml
+  # * https://github.com/argoproj/argo-workflows/blob/v3.2.3/config/config.go
+  # * https://github.com/argoproj/argo-workflows/blob/v3.2.3/docs/workflow-controller-configmap.md
+  # * https://github.com/argoproj/argo-workflows/blob/v3.2.3/docs/workflow-controller-configmap.yaml
 
   # emissary executor is a more portable default, see https://github.com/kubeflow/pipelines/issues/1654.
-  containerRuntimeExecutor: 'docker'
+  containerRuntimeExecutor: 'emissary'
 
   # Note, some-string-{{without}}-template-interpretation is a way to avoid some brackets interpreted as template.
   # Reference: https://github.com/helm/helm/issues/2798#issuecomment-467319526
@@ -2025,6 +2025,14 @@ spec:
     app: minio
     app.kubernetes.io/name: my-release
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlpipeline-minio-artifact
+stringData:
+  accesskey: minio
+  secretkey: minio123
+---
 
 ---
 
@@ -2067,9 +2075,15 @@ spec:
             - /data
           env:
             - name: MINIO_ACCESS_KEY
-              value: minio
+              valueFrom:
+                secretKeyRef:
+                  name: mlpipeline-minio-artifact
+                  key: accesskey
             - name: MINIO_SECRET_KEY
-              value: minio123
+              valueFrom:
+                secretKeyRef:
+                  name: mlpipeline-minio-artifact
+                  key: secretkey
           image: gcr.io/ml-pipeline/google/pipelines/minio:dummy
           name: minio
           ports:
@@ -2100,7 +2114,7 @@ metadata:
 spec:
   descriptor:
     type: Kubeflow Pipelines
-    version: 1.7.0-rc.3
+    version: 1.8.0-alpha.0
     description: |-
       Reusable end-to-end ML workflow
     maintainers:

@@ -21,63 +21,53 @@ import kfp
 import kfp_server_api
 
 from .two_step_with_uri_placeholder import two_step_with_uri_placeholder
-from .util import run_pipeline_func, TestCase, KfpMlmdClient, KfpTask
+from kfp.samples.test.utils import run_pipeline_func, TestCase, KfpMlmdClient, KfpTask
 from ml_metadata.proto import Execution
 
 
 def verify_tasks(t: unittest.TestCase, tasks: Dict[str, KfpTask]):
-    task_names = [*tasks.keys()]
-    t.assertCountEqual(task_names, ['read-from-gcs', 'write-to-gcs'], 'task names')
+    t.assertCountEqual(tasks.keys(), ['read-from-gcs', 'write-to-gcs'],
+                       'task names')
 
     write_task = tasks['write-to-gcs']
     read_task = tasks['read-from-gcs']
 
-    pprint('======= preprocess task =======')
-    pprint(write_task.get_dict())
-    pprint('======= train task =======')
-    pprint(read_task.get_dict())
-    pprint('==============')
-
-    t.assertEqual({
-        'name': 'write-to-gcs',
-        'inputs': {
-            'artifacts': [],
-            'parameters': {
-                'msg': 'Hello world!',
-            }
-        },
-        'outputs': {
-            'artifacts': [{
-                'metadata': {
-                    'display_name': 'artifact'
-                },
-                'name': 'artifact',
-                'type': 'system.Artifact'
-            }],
-            'parameters': {}
-        },
-        'type': 'system.ContainerExecution',
-        'state': Execution.State.COMPLETE,
-    }, write_task.get_dict())
-    t.assertEqual({
-        'name': 'read-from-gcs',
-        'inputs': {
-            'artifacts': [{
-                'metadata': {
-                    'display_name': 'artifact'
-                },
-                'name': 'artifact',
-                'type': 'system.Artifact',
-            }],
-            'parameters': {}
-        },
-        'outputs': {
-            'artifacts': [],
-            'parameters': {}
-        },
-        'type': 'system.ContainerExecution',
-        'state': Execution.State.COMPLETE,
-    }, read_task.get_dict())
+    t.assertEqual(
+        {
+            'name': 'write-to-gcs',
+            'inputs': {
+                'parameters': {
+                    'msg': 'Hello world!',
+                }
+            },
+            'outputs': {
+                'artifacts': [{
+                    'metadata': {
+                        'display_name': 'artifact'
+                    },
+                    'name': 'artifact',
+                    'type': 'system.Artifact'
+                }],
+            },
+            'type': 'system.ContainerExecution',
+            'state': Execution.State.COMPLETE,
+        }, write_task.get_dict())
+    t.assertEqual(
+        {
+            'name': 'read-from-gcs',
+            'inputs': {
+                'artifacts': [{
+                    'metadata': {
+                        'display_name': 'artifact'
+                    },
+                    'name': 'artifact',
+                    'type': 'system.Artifact',
+                }],
+            },
+            'outputs': {},
+            'type': 'system.ContainerExecution',
+            'state': Execution.State.COMPLETE,
+        }, read_task.get_dict())
 
 
 def verify(run: kfp_server_api.ApiRun, mlmd_connection_config, **kwargs):
@@ -91,11 +81,6 @@ def verify(run: kfp_server_api.ApiRun, mlmd_connection_config, **kwargs):
 
 if __name__ == '__main__':
     run_pipeline_func([
-        TestCase(
-            pipeline_func=two_step_with_uri_placeholder,
-            verify_func=verify,
-            mode=kfp.dsl.PipelineExecutionMode.V2_COMPATIBLE,
-        ),
         TestCase(
             pipeline_func=two_step_with_uri_placeholder,
             verify_func=verify,

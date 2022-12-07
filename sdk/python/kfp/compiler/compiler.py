@@ -76,8 +76,10 @@ class Compiler(object):
             raise ValueError('V2_ENGINE execution mode is not supported yet.')
 
         if mode == dsl.PipelineExecutionMode.V2_COMPATIBLE:
-            warnings.warn('V2_COMPATIBLE execution mode is at Beta quality.'
-                          ' Some pipeline features may not work as expected.')
+            raise ValueError('V2_COMPATIBLE mode has been deprecated in KFP SDK'
+                             ' 2.0. To use V2_COMPATIBLE mode, install KFP SDK'
+                             ' 1.8.*.')
+
         self._mode = mode
         self._launcher_image = launcher_image
         self._pipeline_name_param: Optional[dsl.PipelineParam] = None
@@ -744,8 +746,7 @@ class Compiler(object):
         for op in pipeline.ops.values():
             if hasattr(op, 'importer_spec'):
                 raise ValueError(
-                    'dsl.importer is not supported with v1 compiler.'
-                )
+                    'dsl.importer is not supported with v1 compiler.')
 
             if self._mode == dsl.PipelineExecutionMode.V2_COMPATIBLE:
                 v2_compat.update_op(
@@ -1248,7 +1249,6 @@ Please create a new issue at https://github.com/kubeflow/pipelines/issues attach
 
     # Running Argo lint if available
     import shutil
-    import subprocess
     argo_path = shutil.which('argo')
     if argo_path:
         has_working_argo_lint = False
@@ -1298,10 +1298,11 @@ def _run_argo_lint(yaml_text: str):
                     'https://github.com/kubeflow/pipelines/issues attaching the '
                     'pipeline code and the pipeline package. Error: {}'.format(
                         result.stderr.decode('utf-8')))
+            print(result)
             raise RuntimeError(
                 '''Internal compiler error: Compiler has produced Argo-incompatible workflow.
 Please create a new issue at https://github.com/kubeflow/pipelines/issues attaching the pipeline code and the pipeline package.
-Error: {}'''.format(result.stderr.decode('utf-8')))
+Error: {}'''.format(result.stdout.decode('utf-8')))
 
         return True
     return False

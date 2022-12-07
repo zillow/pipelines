@@ -13,16 +13,12 @@
 # limitations under the License.
 
 import kfp
-from .condition import my_pipeline
-from ...test.util import run_pipeline_func, TestCase
+from .nested_condition import my_pipeline
+from kfp.samples.test.utils import run_pipeline_func, TestCase
 
 run_pipeline_func([
     TestCase(
         pipeline_func=my_pipeline,
         mode=kfp.dsl.PipelineExecutionMode.V1_LEGACY,
-    ),
-    TestCase(
-        pipeline_func=my_pipeline,
-        mode=kfp.dsl.PipelineExecutionMode.V2_COMPATIBLE,
     ),
 ])

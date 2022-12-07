@@ -14,14 +14,9 @@
 
 import kfp
 from .xgboost_sample import xgboost_pipeline
-from ...test.util import run_pipeline_func, TestCase, NEEDS_A_FIX
+from kfp.samples.test.utils import run_pipeline_func, TestCase
 
 run_pipeline_func([
-    TestCase(
-        pipeline_func=xgboost_pipeline,
-        mode=kfp.dsl.PipelineExecutionMode.V2_COMPATIBLE,
-        verify_func=NEEDS_A_FIX,
-    ),
     TestCase(
         pipeline_func=xgboost_pipeline,
         mode=kfp.dsl.PipelineExecutionMode.V1_LEGACY,

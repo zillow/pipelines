@@ -14,15 +14,11 @@
 
 import kfp
 from .loop_parallelism import pipeline
-from ...test.util import run_pipeline_func, TestCase
+from kfp.samples.test.utils import run_pipeline_func, TestCase
 
 run_pipeline_func([
     TestCase(
         pipeline_func=pipeline,
         mode=kfp.dsl.PipelineExecutionMode.V1_LEGACY,
-    ),
-    TestCase(
-        pipeline_func=pipeline,
-        mode=kfp.dsl.PipelineExecutionMode.V2_COMPATIBLE,
     ),
 ])
